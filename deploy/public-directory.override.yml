@@ -1,0 +1,5 @@
+# Explicit opt-in approved by the operator: public names/fronts only, no public administration.
+services:
+  onboarding-v2:
+    environment:
+      V2_PUBLIC_DIRECTORY: 'true'

@@ -7,7 +7,7 @@ const notice=(text,error=false)=>{$('catalogMessage').textContent=text;$('catalo
 async function request(payload){
  const response=await fetch(base+'/api/classifications',{method:payload?'POST':'GET',credentials:'same-origin',cache:'no-store',...(payload?{headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}:{})});
  const data=await response.json();
- if(!response.ok){if([401,403].includes(response.status))$('accessHelp').hidden=false;throw new Error(data.error||'No se pudo completar la operación.');}return data;
+ if(!response.ok){if([401,403].includes(response.status))$('accessHelp').hidden=false;throw Object.assign(new Error(data.error||'No se pudo completar la operación.'),{status:response.status});}return data;
 }
 function options(id,items,empty='Todos'){
  const previous=$(id).value;$(id).innerHTML=`<option value="">${empty}</option>`+items.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');
@@ -80,4 +80,36 @@ for(const id of ['filterQuery','filterFront','filterProject','filterRole','filte
 $('syncDirectory').onclick=()=>{if(discard())action('directory.sync');};
 $('catalogReload').onclick=async()=>{if(!discard())return;try{view=await request();closeForms();render();notice('Catálogo actualizado desde el servidor.');}catch(e){notice(e.message,true);}};
 window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
-request().then(v=>{view=v;render();notice('Catálogo listo. Las modificaciones requieren el rol de coordinador.');}).catch(e=>notice(e.message,true));
+let directory;
+function renderPublicDirectory(){
+ if(!directory)return;
+ const query=$('publicDirectoryQuery').value.trim().toLocaleLowerCase('es'),front=$('publicDirectoryFront').value;
+ const users=directory.users.filter(u=>(!query||u.name.toLocaleLowerCase('es').includes(query))&&(!front||(front==='__unclassified'?!u.fronts.length:u.fronts.includes(front))));
+ $('publicDirectoryCount').textContent=`${users.length} de ${directory.users.length} usuarios sincronizados`;
+ $('publicDirectoryList').innerHTML=users.length?`<table class="public-directory-table"><caption>Consulta pública de usuarios</caption><thead><tr><th scope="col">Nombre</th><th scope="col">Frentes clasificados</th></tr></thead><tbody>${users.map(u=>`<tr><td>${esc(u.name)}</td><td>${u.fronts.length?u.fronts.map(esc).join(', '):'Sin clasificar'}</td></tr>`).join('')}</tbody></table>`:'<p class="empty">No hay usuarios que coincidan. Prueba otro nombre o frente.</p>';
+}
+async function loadPublicDirectory(){
+ const button=$('publicDirectoryReload');button.disabled=true;
+ try{
+  const response=await fetch(base+'/api/directory',{credentials:'omit',cache:'no-store'});
+  if(response.status===404){$('publicDirectorySection').hidden=true;return;}
+  const data=await response.json();$('publicDirectorySection').hidden=false;
+  if(!response.ok)throw new Error(data.error||'No se pudo cargar el listado público.');
+  directory=data;
+  $('publicDirectorySource').textContent=`Copia de Azure · Última sincronización de origen: ${directory.syncedAt}. No es una consulta en vivo.`;
+  const selected=$('publicDirectoryFront').value;
+  $('publicDirectoryFront').innerHTML='<option value="">Todos los frentes</option><option value="__unclassified">Sin clasificar</option>'+[...new Set(directory.users.flatMap(u=>u.fronts))].sort().map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('');
+  if([...$('publicDirectoryFront').options].some(o=>o.value===selected))$('publicDirectoryFront').value=selected;
+  renderPublicDirectory();
+ }catch(e){directory=null;$('publicDirectoryList').innerHTML='';$('publicDirectoryCount').textContent='';$('publicDirectorySource').textContent=e.message;}
+ finally{button.disabled=false;}
+}
+$('publicDirectoryReload').onclick=loadPublicDirectory;
+for(const id of ['publicDirectoryQuery','publicDirectoryFront'])$(id).addEventListener('input',renderPublicDirectory);
+loadPublicDirectory();
+request().then(v=>{view=v;render();notice('Catálogo listo. Las modificaciones requieren el rol de coordinador.');}).catch(e=>{
+ if([401,403].includes(e.status)){
+  $('catalogIdentity').textContent='Consulta pública · sin acceso de administración';
+  notice('Para crear o modificar clasificaciones, inicia sesión con una identidad autorizada.');
+ }else notice(e.message,true);
+});

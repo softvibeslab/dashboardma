@@ -28,6 +28,20 @@ export function projectAzureDirectory(snapshot){
 export class ClassificationStore {
  constructor(file,{directoryFile=''}={}){this.file=file;this.directoryFile=directoryFile;this.queue=Promise.resolve();}
  async view(){try{return JSON.parse(await readFile(this.file,'utf8'));}catch(e){if(e.code==='ENOENT')return empty();throw e;}}
+ async publicView(){
+  if(!this.directoryFile)fail('Listado público pendiente de configuración de la fuente Azure.',503);
+  let source;try{const raw=await readFile(this.directoryFile,'utf8');if(raw.length>8*1024*1024)throw Error('size');source=JSON.parse(raw);}catch{fail('La copia de usuarios no está disponible. Inténtalo más tarde.',503);}
+  if(source.source!=='azure-devops-snapshot'||!source.syncedAt||Number.isNaN(Date.parse(source.syncedAt))||!Array.isArray(source.users)||source.users.length>10000)fail('La copia de usuarios no es válida.',503);
+  const state=await this.view();
+  const users=source.users.map(u=>{
+   const raw=typeof u?.name==='string'?u.name.slice(0,300):'';
+   const cleaned=raw.replace(/[^\s<>]+@[^\s<>]+/g,'').replace(/[<>]/g,'').trim();
+   const name=cleaned&&cleaned!==u?.id&&!/^[0-9a-f-]{20,}$/i.test(cleaned)?cleaned:'Nombre no disponible';
+   const fronts=[...new Set(state.participations.filter(p=>p.userId===u?.id&&p.enabled).map(p=>state.fronts.find(f=>f.id===p.frontId&&f.active)?.name).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+   return {name,fronts};
+  }).sort((a,b)=>a.name.localeCompare(b.name,'es'));
+  return {source:'azure-devops-snapshot',syncedAt:source.syncedAt,users};
+ }
  async act(action,actor){
   if(!actor?.authenticated||!actor.roles?.includes('coordinator'))fail('Rol coordinator requerido para administrar clasificaciones.',403);
   only(action,['type','revision','id','data']);

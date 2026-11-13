@@ -1,14 +1,21 @@
 <!doctype html>
 <html lang="es">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Clasificaciones y participación · MobilityApps</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/classifications.css"><script type="module" src="/classifications.js"></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>Clasificaciones y participación · MobilityApps</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/classifications.css"><script type="module" src="/classifications.js"></script></head>
 <body class="catalog-page">
 <a class="skip" href="#catalogMain">Ir al catálogo</a>
 <header><a class="brand" href="/">Mobility<span>Apps</span></a><span class="edition">Clasificaciones y participación</span><a href="/">Volver al onboarding</a><span id="catalogIdentity">Comprobando sesión…</span></header>
 <main id="catalogMain" class="catalog-main">
 <h1>Clasificaciones y participación</h1>
-<p class="intro">Define los frentes y quién puede desarrollar, revisar o apoyar en cada uno. Esta clasificación no cambia equipos, permisos ni asignaciones en Azure DevOps.</p>
+<p class="intro">Consulta los usuarios de la copia sincronizada de Azure y sus frentes. La consulta pública no cambia equipos, permisos ni asignaciones en Azure DevOps.</p>
+<section id="publicDirectorySection" hidden aria-labelledby="publicDirectoryHeading">
+<div class="section-heading"><div><h2 id="publicDirectoryHeading">Usuarios sincronizados · consulta pública</h2><p>Visible sin iniciar sesión. Solo nombres y frentes; correos, proyectos y datos de administración permanecen privados.</p></div><button id="publicDirectoryReload">Actualizar listado</button></div>
+<p id="publicDirectorySource" class="muted"></p>
+<div class="catalog-filters public-filters" role="search" aria-label="Buscar usuarios sincronizados"><label>Buscar por nombre<input id="publicDirectoryQuery" type="search" placeholder="Nombre de la persona"></label><label>Frente<select id="publicDirectoryFront"><option value="">Todos los frentes</option><option value="__unclassified">Sin clasificar</option></select></label></div>
+<p id="publicDirectoryCount" role="status" aria-live="polite"></p><div id="publicDirectoryList" class="table-wrap" tabindex="0" role="region" aria-label="Listado público de usuarios"></div>
+<p class="muted">La lista corresponde a una copia de Azure, no a disponibilidad laboral en tiempo real. Los frentes aparecen cuando existe una participación habilitada y un frente activo.</p>
+</section>
 <p id="catalogMessage" role="status" aria-live="polite">Cargando catálogo…</p>
-<p id="accessHelp" hidden><a href="/">Iniciar sesión desde el onboarding</a>. Se requiere una identidad autorizada para la V2.</p>
+<p id="accessHelp" hidden><a href="/">Iniciar sesión desde el onboarding</a> para administrar clasificaciones. La consulta pública no requiere acceso V2.</p>
 <div id="catalogWorkspace" hidden>
 <div class="catalog-toolbar"><span id="catalogRevision"></span><button id="catalogReload">Recargar catálogo</button><span id="readOnly" hidden>Solo lectura. Un coordinador administra los registros.</span></div>
 <nav class="catalog-nav" aria-label="Secciones del catálogo"><a href="#frontSection">Frentes</a><a href="#peopleSection">Participación de personas</a><a href="#historySection">Historial</a></nav>
