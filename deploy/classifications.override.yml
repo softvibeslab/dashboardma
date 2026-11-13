@@ -1,0 +1,7 @@
+# Apply together with onboarding-v2.compose.yml. Mount only sanitized Azure identities.
+services:
+  onboarding-v2:
+    environment:
+      V2_AZURE_DIRECTORY_FILE: /run/v2/azure/azure-directory.json
+    volumes:
+      - ${V2_AZURE_DIRECTORY_HOST:?Set the private sanitized directory}:/run/v2/azure:ro
