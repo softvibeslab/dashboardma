@@ -1,0 +1,14 @@
+{
+  "name": "mobilityapps-control-tower",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "check": "node --check src/server.js && node --check src/azure-import.js && node --check src/store.js && node --check src/auth.js && node --check src/enrichment.js && node --check src/workspace.js && node --check src/answers.js && node --check src/wizard.js && node --check src/technology-suggestion.js && node --check public/dashboard/requirements/onboarding/technology-suggestion.js && node --check public/dashboard/requirements/app.js && node --check public/dashboard/requirements/enrichment-view.js && node --check public/dashboard/requirements/collaboration.js && node --check public/dashboard/requirements/answers.js && node --check public/dashboard/requirements/onboarding/app.js && node --check public/dashboard/requirements/onboarding/intake.js && node --check public/dashboard/requirements/onboarding/azure-sources.js && node --check public/dashboard/requirements/flow/app.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

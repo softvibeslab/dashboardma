@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="es" data-users-module>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Usuarios y asignaciones · MobilityApps Control Tower</title>
+  <link rel="stylesheet" href="/dashboard/styles.css" />
+</head>
+<body>
+  <div class="shell users-module-shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="brand-icon"></div>
+        <div>
+          <strong>MobilityApps<br />Control Tower</strong>
+          <span>Usuarios & asignaciones</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="/dashboard">← Resumen ejecutivo</a>
+        <a class="active" href="/dashboard/users">Usuarios y asignaciones</a>
+        <a href="/dashboard/repositories">Repos y alertas</a>
+        <a href="/dashboard#flujo">Flujo CP</a>
+        <a href="/dashboard#trazabilidad">Trazabilidad</a>
+      </nav>
+      <p class="sidebar-note">Módulo operativo sincronizado con Azure DevOps. El CRUD local queda separado de la vista ejecutiva principal.</p>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div>
+          <h1>Usuarios y asignaciones</h1>
+          <p>Personas reales detectadas desde Azure DevOps y asignaciones derivadas de work items asignados.</p>
+        </div>
+        <div class="top-actions">
+          <a class="ghost-link" href="/dashboard">Volver al dashboard</a>
+          <button class="primary-button" type="button" id="refreshHint">Sincronizado con Azure</button>
+        </div>
+      </header>
+
+      <section class="kpi-grid users-kpis">
+        <article class="kpi"><span class="label">Usuarios</span><span class="value" id="usersCount">—</span><span class="hint">Azure + locales</span></article>
+        <article class="kpi good"><span class="label">Asignaciones</span><span class="value" id="assignmentsCount">—</span><span class="hint">work items asignados</span></article>
+        <article class="kpi purple"><span class="label">Azure sync</span><span class="value" id="azureUsersCount">—</span><span class="hint" id="azureSyncAt">última sincronización</span></article>
+      </section>
+
+      <section class="panel users-panel" id="usuarios">
+        <div class="panel-head">
+          <h2>CRUD local de usuarios y asignaciones</h2>
+          <span>los registros Azure se actualizan por sync read-only</span>
+        </div>
+        <div class="crud-grid">
+          <form id="userForm" class="form-card">
+            <h3>Crear usuario local</h3>
+            <input name="name" placeholder="Nombre" required />
+            <input name="role" placeholder="Rol" required />
+            <input name="team" placeholder="Equipo" required />
+            <input name="capacity" placeholder="Capacidad %" type="number" min="0" max="100" value="50" required />
+            <button class="primary-button" type="submit">Crear usuario</button>
+          </form>
+          <form id="assignmentForm" class="form-card assignment-form">
+            <h3>Crear asignación local</h3>
+            <select name="userId" required></select>
+            <select name="initiativeId" required></select>
+            <select name="workItemId" required></select>
+            <input name="role" placeholder="Responsabilidad" required />
+            <input name="allocation" placeholder="% dedicación" type="number" min="0" max="100" value="40" required />
+            <button class="primary-button" type="submit">Asignar</button>
+          </form>
+        </div>
+      </section>
+
+      <section class="main-grid">
+        <div class="panel">
+          <div class="panel-head"><h2>Usuarios sincronizados</h2><span>fuente: Azure DevOps + locales</span></div>
+          <div id="users" class="compact-card-list users-long-list"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Asignaciones</h2><span>usuario → work item</span></div>
+          <div id="assignments" class="compact-card-list users-long-list"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/dashboard/app.js" type="module"></script>
+</body>
+</html>

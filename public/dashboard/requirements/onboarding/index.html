@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Onboarding de requerimientos · MobilityApps Control Tower</title>
+  <link rel="stylesheet" href="/dashboard/styles.css">
+  <link rel="stylesheet" href="/dashboard/requirements/answers.css">
+  <link rel="stylesheet" href="/dashboard/requirements/onboarding/styles.css">
+</head>
+<body class="onboarding">
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand-block"><div class="brand-icon" aria-hidden="true"></div><div><strong>MobilityApps<br>Control Tower</strong><span>Intake + QA</span></div></div>
+    <nav class="nav" aria-label="Principal"><a href="/dashboard">← Resumen ejecutivo</a><a href="/dashboard/requirements">Requerimientos</a><a href="/dashboard/requirements/flow">Flujo visual</a><a class="active" href="/dashboard/requirements/onboarding" aria-current="page">Onboarding guiado</a></nav>
+    <p class="sidebar-note">IA propone; las personas aprueban.<br>De la versión enriquecida a una entrega documental trazable. Sin ejecución de código ni despliegues.</p>
+  </aside>
+  <main class="content">
+    <nav class="breadcrumbs" aria-label="Ruta de navegación"><a href="/dashboard/requirements">Requerimientos</a><span aria-hidden="true">/</span><a href="/dashboard/requirements/flow">Flujo visual</a><span aria-hidden="true">/</span><span>Onboarding</span></nav>
+    <header class="topbar"><div><p class="eyebrow">REQUERIMIENTOS · PASO A PASO</p><h1>Del contexto a la entrega</h1><p>Un frente claro, una revisión responsable, un paquete trazable.</p></div><div id="sessionStatus" class="session-status" role="status" aria-live="polite"><a class="ghost-link" href="/dashboard/auth/login?returnTo=%2Fdashboard%2Frequirements%2Fonboarding">Iniciar sesión</a></div></header>
+    <section class="panel azure-search-panel" aria-labelledby="azureSearchTitle">
+      <h2 id="azureSearchTitle">Buscar un requerimiento en Azure</h2>
+      <p id="azureSearchHint" class="hint">Datos sincronizados, no en vivo. Busca por ID o texto para agregar a la bandeja sin duplicados. No se genera enriquecimiento automáticamente.</p>
+      <form id="azureSearchForm" class="azure-search-form" role="search">
+        <label for="azureQuery">ID o texto del requerimiento<input id="azureQuery" name="q" type="search" placeholder="Ej. 12345 o pedido" aria-describedby="azureSearchHint" autocomplete="off"></label>
+        <button id="azureSearchButton" type="submit" class="primary-button">Buscar</button>
+      </form>
+      <div id="azureResults" aria-live="polite" aria-atomic="false"><p class="hint">Escribe un ID o texto y pulsa Buscar. No se consulta Azure en vivo.</p></div>
+    </section>
+    <section class="panel selection-panel" aria-label="Requerimiento de trabajo"><label for="requirementSelect">¿Qué requerimiento vas a preparar?</label><select id="requirementSelect"><option value="">Cargando requerimientos…</option></select><p id="requirementMeta" class="hint">Selecciona un requerimiento para retomar su etapa actual.</p></section>
+    <div id="message" class="message" role="status" aria-live="polite" hidden></div>
+    <button id="reloadConflict" type="button" class="secondary" hidden>Recargar versión del servidor</button>
+    <div id="wizard" class="wizard-layout" hidden>
+      <nav class="stage-rail panel" aria-label="Etapas del onboarding"><ol id="stageList"></ol><p class="hint">El servidor confirma cada transición. Volver permite revisar; cambiar el origen invalida aceptaciones posteriores.</p></nav>
+      <section class="panel stage-panel" aria-labelledby="stageTitle">
+        <header class="stage-heading"><span id="stageNumber" class="stage-number"></span><div><p id="stageProgress" class="eyebrow"></p><h2 id="stageTitle" tabindex="-1"></h2></div></header>
+        <div id="stageBody"></div>
+        <aside id="blockers" class="blockers" aria-label="Qué falta para continuar" hidden></aside>
+        <footer class="wizard-footer"><button type="button" class="secondary" id="backButton">← Anterior</button><span id="saveHint" class="hint">Cambios guardados</span><button type="button" class="primary-button" id="nextButton">Siguiente →</button></footer>
+      </section>
+    </div>
+    <p id="emptyPrompt" class="empty-state">Elige un requerimiento. Empezarás desde su enriquecimiento previo, sin generar documentos automáticamente.</p>
+  </main>
+</div>
+<script type="module" src="/dashboard/session-status.js"></script>
+<script type="module" src="/dashboard/requirements/onboarding/app.js"></script>
+</body>
+</html>

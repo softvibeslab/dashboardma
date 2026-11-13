@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es" data-module-detail>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Detalle de módulo · MobilityApps Control Tower</title>
+  <link rel="stylesheet" href="/dashboard/styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="brand-icon"></div>
+        <div>
+          <strong>MobilityApps<br />Control Tower</strong>
+          <span>Detalle operativo</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="/dashboard">← Dashboard principal</a>
+        <a href="/dashboard/modules/azure">Azure Sync</a>
+        <a href="/dashboard/modules/cp">CP0–CP5</a>
+        <a href="/dashboard/modules/qa">QA</a>
+        <a href="/dashboard/modules/devops">DevOps</a>
+        <a href="/dashboard/modules/business">Negocio</a>
+        <a href="/dashboard/modules/risks">Riesgos</a>
+        <a href="/dashboard/modules/capacity">Capacidad</a>
+        <a href="/dashboard/users">Usuarios y asignaciones</a>
+        <a href="/dashboard/repositories">Repos y alertas</a>
+      </nav>
+      <p class="sidebar-note">Vista de detalle sin cambiar la torre ejecutiva. Azure DevOps sigue siendo la fuente de verdad; los cambios locales quedan separados.</p>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div>
+          <h1 id="moduleTitle">Detalle de módulo</h1>
+          <p id="moduleSubtitle">Cargando estado, métricas, registros y controles operativos.</p>
+        </div>
+        <div class="top-actions">
+          <a class="ghost-link" href="/dashboard">Volver</a>
+          <a class="primary-button" href="/dashboard/users">Usuarios</a>
+        </div>
+      </header>
+
+      <section class="kpi-grid users-kpis" id="moduleKpis"></section>
+
+      <section class="main-grid">
+        <div class="panel">
+          <div class="panel-head"><h2>Registros operativos</h2><span id="recordCount">—</span></div>
+          <div class="filter-row">
+            <input id="moduleFilter" placeholder="Filtrar por texto, estado, owner o proyecto" />
+          </div>
+          <div id="moduleRecords" class="metric-list"></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2>Controles y decisiones</h2><span>evidencia · riesgo · siguiente paso</span></div>
+          <div id="moduleControls" class="metric-list"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Vista de trazabilidad/capacidad relacionada</h2><span>lectura ejecutiva</span></div>
+        <div id="moduleDeepDive" class="table-wrap"></div>
+      </section>
+    </main>
+  </div>
+  <script src="/dashboard/modules/module.js" type="module"></script>
+</body>
+</html>

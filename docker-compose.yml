@@ -1,0 +1,49 @@
+name: mobilityapps-dashboard-control-tower
+
+services:
+  dashboard:
+    build: .
+    image: mobilityapps-control-tower:local
+    container_name: mobilityapps-dashboard-control-tower
+    restart: unless-stopped
+    environment:
+      - PORT=4189
+      - HOST=0.0.0.0
+      - ENRICHMENT_ENABLED=true
+    env_file:
+      - ./.env.auth
+    volumes:
+      - ./data:/app/data
+    networks:
+      - coolify
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=coolify
+
+      # Subdomain route. Kept ready in case DNS is added later.
+      - "traefik.http.routers.mobilityapps-dashboard-http.rule=Host(`dashboard.iamobilityappsinc.com`)"
+      - traefik.http.routers.mobilityapps-dashboard-http.entrypoints=http
+      - traefik.http.routers.mobilityapps-dashboard-http.service=mobilityapps-dashboard
+      - "traefik.http.routers.mobilityapps-dashboard.rule=Host(`dashboard.iamobilityappsinc.com`)"
+      - traefik.http.routers.mobilityapps-dashboard.entrypoints=https
+      - traefik.http.routers.mobilityapps-dashboard.tls=true
+      - traefik.http.routers.mobilityapps-dashboard.tls.certresolver=letsencrypt
+      - traefik.http.routers.mobilityapps-dashboard.service=mobilityapps-dashboard
+
+      # Main-domain folder route requested by Roger.
+      - "traefik.http.routers.mobilityapps-dashboard-path-http.rule=Host(`iamobilityappsinc.com`) && PathPrefix(`/dashboard`)"
+      - traefik.http.routers.mobilityapps-dashboard-path-http.entrypoints=http
+      - traefik.http.routers.mobilityapps-dashboard-path-http.priority=10000
+      - traefik.http.routers.mobilityapps-dashboard-path-http.service=mobilityapps-dashboard
+      - "traefik.http.routers.mobilityapps-dashboard-path.rule=Host(`iamobilityappsinc.com`) && PathPrefix(`/dashboard`)"
+      - traefik.http.routers.mobilityapps-dashboard-path.entrypoints=https
+      - traefik.http.routers.mobilityapps-dashboard-path.priority=10000
+      - traefik.http.routers.mobilityapps-dashboard-path.tls=true
+      - traefik.http.routers.mobilityapps-dashboard-path.tls.certresolver=letsencrypt
+      - traefik.http.routers.mobilityapps-dashboard-path.service=mobilityapps-dashboard
+
+      - traefik.http.services.mobilityapps-dashboard.loadbalancer.server.port=4189
+
+networks:
+  coolify:
+    external: true

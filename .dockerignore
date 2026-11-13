@@ -1,0 +1,12 @@
+.env
+.env.*
+.git
+.runtime
+node_modules
+backups
+graphify-out
+data/uploads
+data/enrichment-jobs
+data/requirement-workspace.json*
+data/requirement-wizards.json*
+*.log

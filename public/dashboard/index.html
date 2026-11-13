@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es" data-dashboard-app>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MobilityApps Ecosystem Control Tower</title>
+  <link rel="stylesheet" href="/dashboard/styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="brand-icon"></div>
+        <div>
+          <strong>MobilityApps<br />Control Tower</strong>
+          <span>Ecosistema 360</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <a class="active" href="#resumen">Resumen ejecutivo</a>
+        <a href="/dashboard/requirements">Requerimientos y enriquecimiento</a>
+        <a href="/dashboard/modules/cp">Flujo CP end-to-end</a>
+        <a href="/dashboard/modules/qa">QA y defectos</a>
+        <a href="/dashboard/modules/devops">DevOps / Release</a>
+        <a href="/dashboard/modules/risks">Riesgos y bloqueos</a>
+        <a href="/dashboard/users">Usuarios y asignaciones</a>
+        <a href="/dashboard/repositories">Repos y alertas</a>
+        <a href="/dashboard/modules/business">Decisiones</a>
+      </nav>
+      <p class="sidebar-note">MVP con datos controlados. Azure DevOps seguirá siendo la fuente de verdad; esta torre consolida, alerta y explica el flujo.</p>
+    </aside>
+
+    <main class="content">
+      <header class="topbar" id="resumen">
+        <div>
+          <h1>Torre de Control del Ecosistema MobilityApps</h1>
+          <p>Tracking de iniciativas, HU, bugs, CPs, QA, DevOps y aprobación de negocio de inicio a fin.</p>
+        </div>
+        <div class="top-actions">
+          <div id="sessionStatus" class="session-status" role="status" aria-live="polite">Verificando sesión…</div>
+          <button class="ghost-button" type="button">Exportar semanal</button>
+          <button class="primary-button" type="button">Ver bloqueos críticos</button>
+        </div>
+      </header>
+
+      <section class="kpi-grid" id="kpis"></section>
+
+      <section class="panel flow-panel" id="flujo">
+        <div class="panel-head">
+          <h2>Flujo end-to-end por etapa</h2>
+          <span>Azure → CPs → Dev → QA → DevOps → Negocio</span>
+        </div>
+        <div class="stage-flow" id="flow"></div>
+      </section>
+
+      <section class="main-grid">
+        <div class="panel initiatives-panel">
+          <div class="panel-head">
+            <h2>Iniciativas prioritarias</h2>
+            <span>datos demo</span>
+          </div>
+          <div class="filter-row">
+            <button class="chip active" type="button">Todas</button>
+            <button class="chip" type="button">Bloqueadas</button>
+            <button class="chip" type="button">QA</button>
+            <button class="chip" type="button">DevOps</button>
+            <button class="chip" type="button">Negocio</button>
+          </div>
+          <div class="table-wrap">
+            <table class="clean-table">
+              <thead><tr><th>ID</th><th>Proyecto</th><th>Etapa</th><th>Owner</th><th>Riesgo</th><th>Próximo gate</th></tr></thead>
+              <tbody id="initiatives"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel handoff-panel">
+          <div class="panel-head">
+            <h2>Alertas de handoff</h2>
+            <span>SLA operativo</span>
+          </div>
+          <div id="handoffs" class="alert-list"></div>
+        </div>
+      </section>
+
+      <section class="panel module-detail-panel" id="modulos">
+        <div class="panel-head">
+          <h2>Detalle operativo por módulo</h2>
+          <span>owners · estado · métricas · próximos controles</span>
+        </div>
+        <div class="module-grid" id="moduleDetails"></div>
+      </section>
+
+      <section class="panel trace-panel" id="trazabilidad">
+        <div class="panel-head">
+          <h2>Matriz de trazabilidad — iniciativa prioritaria</h2>
+          <span>requisito → producción</span>
+        </div>
+        <div class="trace-map" id="traceability"></div>
+      </section>
+
+      <section class="triple-grid">
+        <div class="panel" id="qa">
+          <div class="panel-head"><h2>QA</h2><span>calidad y evidencia</span></div>
+          <div id="qaCards" class="metric-list"></div>
+        </div>
+        <div class="panel" id="devops">
+          <div class="panel-head"><h2>DevOps</h2><span>pipelines y release</span></div>
+          <div id="gates" class="metric-list"></div>
+        </div>
+        <div class="panel" id="riesgos">
+          <div class="panel-head"><h2>Riesgos</h2><span>top bloqueos</span></div>
+          <div id="risks" class="metric-list"></div>
+        </div>
+      </section>
+
+
+      <section class="panel decisions-panel" id="decisiones">
+        <div class="panel-head"><h2>Decisiones y actividad reciente</h2><span>bitácora operativa</span></div>
+        <form id="activityForm" class="activity-form">
+          <input name="message" placeholder="Registrar decisión o actualización manual" required />
+          <input name="actor" placeholder="Actor" value="PMO" required />
+          <button class="primary-button" type="submit">Agregar</button>
+        </form>
+        <div id="activities" class="timeline"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/dashboard/session-status.js" type="module"></script>
+  <script src="/dashboard/app.js" type="module"></script>
+</body>
+</html>

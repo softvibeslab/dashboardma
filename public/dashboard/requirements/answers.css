@@ -1,0 +1,82 @@
+/* Shared Q&A: white paper, blue decision rail; no private-chat selectors. */
+.answers-section {
+  --answers-blue: #174ea6;
+  --answers-ink: #172d4d;
+  --answers-muted: #506580;
+  --answers-line: #cbdcf1;
+  --answers-wash: #f2f7ff;
+  --answers-error: #9b2424;
+  color: var(--answers-ink);
+  background: #fff;
+  min-width: 0;
+}
+.answers-section h3,
+.answers-section h4 { font-family: inherit; letter-spacing: -.015em; }
+.answers-section h4 { margin: 0; font-size: 1rem; line-height: 1.5; overflow-wrap: anywhere; }
+.answers-section .answers-toolbar { display: flex; justify-content: flex-end; margin-block: .75rem; }
+.answers-section .answers-card {
+  border: 1px solid var(--answers-line);
+  border-left: 4px solid var(--answers-blue);
+  border-radius: 10px;
+  padding: 1.15rem;
+  margin-block: 1rem;
+  min-width: 0;
+}
+.answers-section .answers-card-heading {
+  display: grid;
+  grid-template-columns: .75rem minmax(0, 1fr) auto;
+  gap: .75rem;
+  align-items: center;
+  min-height: 44px;
+  list-style: none;
+}
+.answers-section .answers-card-heading::-webkit-details-marker { display: none; }
+.answers-section .answers-card-heading::before { content: '▸'; font-size: 1rem; }
+.answers-section .answers-card[open] > .answers-card-heading::before { content: '▾'; }
+.answers-section .answers-card[open] > .answers-card-heading { border-bottom: 1px solid var(--answers-line); padding-bottom: .75rem; }
+.answers-section .answers-card-body { padding-top: .25rem; }
+.answers-section .answers-status { font-size: .78rem; font-weight: 700; color: var(--answers-blue); background: var(--answers-wash); border: 1px solid var(--answers-line); border-radius: 5px; padding: .3rem .5rem; }
+.answers-section .answers-status-approved { color: #17643f; background: #ecf8f0; border-color: #a4d6b6; }
+.answers-section .answers-meta { color: var(--answers-muted); font-size: .82rem; line-height: 1.6; overflow-wrap: anywhere; }
+.answers-section label { display: block; font-size: .88rem; font-weight: 650; margin: 1rem 0 .4rem; }
+.answers-section textarea,
+.answers-section input {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid #98b3d5;
+  border-radius: 6px;
+  padding: .75rem;
+  background: #fff;
+  color: var(--answers-ink);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+.answers-section textarea { resize: vertical; }
+.answers-section .answers-text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.answers-section .answers-proposal { background: var(--answers-wash); padding: .75rem; margin-block: .8rem; border-radius: 6px; }
+.answers-section summary { cursor: pointer; color: var(--answers-blue); font-size: .88rem; font-weight: 650; padding-block: .35rem; }
+.answers-section .answers-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: 1rem; }
+.answers-section button { min-height: 44px; white-space: normal; overflow-wrap: anywhere; max-width: 100%; cursor: pointer; }
+.answers-section .secondary { border: 1px solid #cbd5e1; border-radius: 10px; padding: 10px 14px; background: #f8fafc; color: #234e85; font: inherit; font-weight: 600; }
+.answers-section .secondary:hover { background: #eff6ff; border-color: #93c5fd; }
+.answers-section button:disabled { cursor: wait; opacity: .6; }
+.answers-section :is(button, textarea, input, summary):focus-visible { outline: 3px solid var(--answers-blue); outline-offset: 3px; }
+.answers-section .answers-history { border-top: 1px solid var(--answers-line); padding-top: .4rem; }
+.answers-section .answers-history ol { padding-left: 1.25rem; }
+.answers-section .answers-history li { padding-bottom: .8rem; }
+.answers-section code { font: .75rem/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; white-space: pre-wrap; }
+.answers-section .answers-feedback { line-height: 1.55; overflow-wrap: anywhere; }
+.answers-section .answers-error { color: var(--answers-error); font-weight: 600; overflow-wrap: anywhere; }
+.answers-section .answers-new-question { border-top: 2px solid var(--answers-line); padding-top: 1rem; margin-top: 1.5rem; }
+.answers-section .answers-new-question button { margin-top: .9rem; }
+@media (max-width: 480px) {
+  .answers-section .answers-card { padding: .85rem; }
+  .answers-section .answers-card-heading { grid-template-columns: .75rem minmax(0, 1fr); gap: .5rem; }
+  .answers-section .answers-status { grid-column: 2; justify-self: start; }
+  .answers-section .answers-actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .answers-section .answers-actions button { width: 100%; }
+}

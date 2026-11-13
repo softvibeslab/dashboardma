@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es" data-requirements-app>
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Requerimientos · MobilityApps Control Tower</title>
+  <link rel="stylesheet" href="/dashboard/styles.css" />
+  <link rel="stylesheet" href="/dashboard/requirements/collaboration.css" />
+  <link rel="stylesheet" href="/dashboard/requirements/answers.css" />
+  <style>
+    .req-grid{display:grid;grid-template-columns:minmax(280px,.8fr) minmax(420px,1.5fr);gap:18px}.req-list{display:grid;gap:10px}.req-card{border:1px solid #dbe4ef;border-radius:14px;padding:14px;background:#fff;cursor:pointer}.req-card.active{border-color:#2563eb;box-shadow:0 0 0 3px #dbeafe}.req-card h3{margin:0 0 7px;font-size:15px}.req-card p{margin:4px 0;color:#64748b;font-size:13px}.req-meta{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.req-pill{border-radius:999px;padding:4px 8px;background:#eef2ff;color:#3730a3;font-size:11px}.req-pill.pending{background:#fff7ed;color:#9a3412}.req-pill.good{background:#ecfdf5;color:#166534}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.form-grid .full{grid-column:1/-1}.form-grid input,.form-grid textarea,.form-grid select{width:100%;box-sizing:border-box;padding:10px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}.form-grid textarea{min-height:90px;resize:vertical}.req-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.source-box{border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin:10px 0;background:#f8fafc}.source-file-field{display:grid;gap:6px;padding:12px;border:1px dashed #93c5fd;border-radius:10px;background:#eff6ff}.source-box form{display:grid;gap:8px}.source-box input[type=file]{display:block;margin-top:8px}.url-row{display:grid;grid-template-columns:1fr 150px auto;gap:8px;margin-top:8px}.url-row input,.url-row select{padding:10px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}.detail-block{border-top:1px solid #e2e8f0;padding-top:15px;margin-top:15px}.status-line{display:flex;align-items:center;justify-content:space-between;gap:10px}.muted{color:#64748b;font-size:13px}.empty{padding:30px;text-align:center;color:#64748b;border:1px dashed #cbd5e1;border-radius:12px}@media(max-width:900px){.req-grid{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}.form-grid .full{grid-column:auto}.url-row{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="shell"><aside class="sidebar"><div class="brand-block"><div class="brand-icon"></div><div><strong>MobilityApps<br />Control Tower</strong><span>Intake + QA</span></div></div><nav class="nav"><a href="/dashboard">← Resumen ejecutivo</a><a class="active" href="/dashboard/requirements">Requerimientos</a><a href="/dashboard/requirements/flow">Flujo visual</a><a href="/dashboard/modules/qa">QA y defectos</a><a href="/dashboard/modules/cp">Flujo CP end-to-end</a></nav><p class="sidebar-note">Hermes genera propuestas CP0/CP1 para revisión humana. No se aprueban cambios ni se escribe en Azure. Fuentes no extraídas permanecen pendientes.</p></aside>
+    <main class="content"><header class="topbar"><div><h1>Requerimientos y enriquecimiento</h1><p>Captura de fuentes, preguntas, versiones y paquete QA trazable.</p></div><div class="top-actions"><a class="ghost-link" href="/dashboard">Torre de control</a><div id="sessionStatus" class="session-status" role="status" aria-live="polite">Verificando sesión…</div></div></header>
+      <section class="panel" aria-labelledby="azureSearchTitle">
+        <div class="panel-head"><h2 id="azureSearchTitle">Buscar en Azure DevOps</h2><span>Solo lectura · datos sincronizados</span></div>
+        <p id="azureSyncInfo" class="muted">Consultando la última sincronización… El inicio de sesión del dashboard no concede permisos adicionales en Azure.</p>
+        <form id="azureSearchForm" class="azure-search-form">
+          <label>ID, título o responsable<input id="azureQuery" name="q" type="search" maxlength="200" placeholder="Ej. 3105, pedido o responsable" /></label>
+          <label>Proyecto<select id="azureProject" name="project"><option value="">Todos los proyectos</option></select></label>
+          <label>Estado<select id="azureState" name="state"><option value="">Todos los estados</option></select></label>
+          <button id="azureSearchButton" class="primary-button" type="submit">Buscar</button>
+        </form>
+        <p id="azureSearchStatus" class="muted" role="status" aria-live="polite"></p>
+        <div id="azureResults" class="azure-results"></div>
+        <div class="azure-pagination"><button id="azurePrevious" class="secondary" type="button" disabled>Anterior</button><span id="azurePageInfo" class="muted"></span><button id="azureNext" class="secondary" type="button" disabled>Siguiente</button></div>
+      </section>
+      <section class="kpi-grid" id="reqKpis"></section>
+      <section class="req-grid"><div class="panel">
+        <div class="panel-head"><h2>Nuevo requerimiento</h2><span>REQ automático</span></div>
+        <p class="muted">Completa el formulario o usa un registro de Azure. Crear un requerimiento lo guarda en esta torre; no modifica Azure DevOps.</p>
+        <form id="reqForm" class="form-grid">
+          <label class="full">Título<input name="title" required placeholder="Ej. Nueva factibilidad de ruta" /></label>
+          <label>Proyecto<input name="project" required placeholder="Proyecto / cliente" /></label>
+          <label>Prioridad<select name="priority"><option>Alta</option><option>Media</option><option>Baja</option></select></label>
+          <label class="full">Contexto inicial<textarea name="description" placeholder="Describe el problema y el resultado esperado"></textarea></label>
+          <label>URL de fuente<input name="sourceUrl" type="url" placeholder="https://..." /></label>
+          <label>Tipo de fuente<select id="sourceType" name="sourceType"><option value="teams-url">Teams / URL</option><option value="document">Documento</option><option value="transcription">Transcripción</option><option value="image">Imagen</option><option value="video">Video</option><option value="other-url">Otra URL</option></select></label>
+          <label id="sourceFileWrap" class="full source-file-field" hidden>Archivo de fuente<span class="muted"> Este tipo de fuente requiere un archivo adjunto.</span><input id="sourceFile" name="sourceFile" type="file" /></label>
+          <div class="full req-actions"><button class="primary-button" type="submit">Crear requerimiento</button><button class="secondary" type="button" data-action="open-demo">Probar adjuntos con demo</button><span id="formMsg" class="muted"></span></div>
+        </form></div>
+        <div class="panel"><div class="panel-head"><h2>Bandeja</h2><span id="reqCount">0</span></div><div id="reqList" class="req-list"></div></div>
+      </section>
+      <section class="panel" id="detailPanel"><div class="empty">Selecciona un requerimiento para ver anexos, preguntas, versiones y el paquete QA.</div></section>
+    </main></div><script src="/dashboard/session-status.js" type="module"></script><script src="/dashboard/requirements/app.js" type="module"></script>
+</body></html>

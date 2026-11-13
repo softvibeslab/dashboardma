@@ -1,0 +1,19 @@
+# Credentials (only the empty example is versioned)
+.env
+.env.*
+!.env.auth.example
+*.pem
+*.key
+
+# Confidential operational state, attachments and conversations
+/data/
+/backups/
+/.runtime/
+
+# Generated files
+node_modules/
+__pycache__/
+*.py[cod]
+*.log
+coverage/
+.DS_Store

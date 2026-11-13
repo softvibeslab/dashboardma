@@ -1,0 +1,26 @@
+[Unit]
+Description=MobilityApps requirement enrichment with tool-free Hermes
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/workspaces/mobilityapps-dashboard-control-tower
+ExecStart=/usr/bin/python3 /root/workspaces/mobilityapps-dashboard-control-tower/scripts/hermes-enrichment-worker.py
+Environment=HERMES_HOME=/root/.hermes
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+RestrictSUIDSGID=true
+MemoryMax=1536M
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

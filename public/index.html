@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MobilityApps Ecosystem Control Tower</title>
+<style>
+:root{
+  --bg:#f5f7fb;--panel:#ffffff;--ink:#132238;--muted:#64748b;--line:#dbe4ef;
+  --blue:#2563eb;--blue2:#dbeafe;--green:#16a34a;--green2:#dcfce7;--amber:#d97706;--amber2:#fef3c7;
+  --red:#dc2626;--red2:#fee2e2;--purple:#7c3aed;--purple2:#ede9fe;--cyan:#0891b2;--cyan2:#cffafe;
+  --shadow:0 18px 50px rgba(15,23,42,.10);
+}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);font-family:Inter,Arial,sans-serif;color:var(--ink)}
+.app{display:grid;grid-template-columns:270px 1fr;min-height:100vh}.side{background:#0f172a;color:#e5e7eb;padding:24px 18px;position:sticky;top:0;height:100vh}.brand{display:flex;gap:12px;align-items:center;margin-bottom:28px}.logo{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#38bdf8,#7c3aed);box-shadow:0 0 0 6px rgba(255,255,255,.06)}.brand h1{font-size:16px;line-height:1.15;margin:0}.brand small{color:#94a3b8}.nav{display:grid;gap:8px}.nav a{color:#cbd5e1;text-decoration:none;padding:12px;border-radius:12px;font-size:14px}.nav a.active,.nav a:hover{background:#1e293b;color:white}.side .note{position:absolute;bottom:20px;left:18px;right:18px;font-size:12px;color:#94a3b8;line-height:1.45;border-top:1px solid #334155;padding-top:14px}
+.main{padding:26px 30px 60px}.top{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;margin-bottom:22px}.title h2{font-size:28px;margin:0 0 8px}.title p{margin:0;color:var(--muted)}.actions{display:flex;gap:10px;align-items:center}.btn{border:1px solid var(--line);background:white;padding:10px 14px;border-radius:12px;color:var(--ink);font-weight:700}.btn.primary{background:var(--blue);color:white;border-color:var(--blue)}.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800}.p-green{background:var(--green2);color:#166534}.p-red{background:var(--red2);color:#991b1b}.p-amber{background:var(--amber2);color:#92400e}.p-blue{background:var(--blue2);color:#1e40af}.p-purple{background:var(--purple2);color:#5b21b6}.p-cyan{background:var(--cyan2);color:#155e75}
+.grid{display:grid;gap:18px}.kpis{grid-template-columns:repeat(6,1fr)}.card{background:var(--panel);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);padding:18px}.kpi .label{color:var(--muted);font-size:12px;text-transform:uppercase;font-weight:800;letter-spacing:.04em}.kpi .num{font-size:31px;font-weight:900;margin-top:8px}.kpi .trend{font-size:12px;color:var(--muted);margin-top:6px}.two{grid-template-columns:1.35fr .65fr}.three{grid-template-columns:1fr 1fr 1fr}.section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.section-title h3{margin:0;font-size:18px}.section-title span{color:var(--muted);font-size:13px}.flow{display:grid;grid-template-columns:repeat(8,1fr);gap:10px}.stage{border:1px solid var(--line);border-radius:16px;background:#f8fafc;padding:12px;min-height:130px;position:relative}.stage h4{font-size:12px;margin:0 0 10px;text-transform:uppercase;color:#334155}.stage .count{font-size:26px;font-weight:900}.stage small{display:block;color:var(--muted);margin-top:4px}.stage:after{content:"→";position:absolute;right:-12px;top:46px;color:#94a3b8;font-weight:900}.stage:last-child:after{content:""}.bar{height:8px;border-radius:999px;background:#e2e8f0;overflow:hidden;margin-top:10px}.bar i{display:block;height:100%;background:var(--blue)}
+.table{width:100%;border-collapse:collapse}.table th,.table td{padding:12px 10px;border-bottom:1px solid var(--line);text-align:left;font-size:13px;vertical-align:top}.table th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}.id{font-weight:900;color:var(--blue)}.risk-high{color:var(--red);font-weight:900}.risk-med{color:var(--amber);font-weight:900}.risk-low{color:var(--green);font-weight:900}.timeline{display:grid;gap:12px}.event{display:grid;grid-template-columns:14px 1fr;gap:10px}.dot{width:12px;height:12px;background:var(--blue);border-radius:50%;margin-top:5px;box-shadow:0 0 0 5px var(--blue2)}.event b{display:block}.event span{display:block;color:var(--muted);font-size:13px;margin-top:3px}.trace{display:grid;grid-template-columns:repeat(9,1fr);gap:6px;align-items:center}.trace .box{background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center;min-height:72px}.trace .box b{display:block;font-size:12px}.trace .box span{display:block;font-size:11px;color:var(--muted);margin-top:4px}.trace .arrow{color:#94a3b8;font-weight:900;text-align:center}.gates{display:grid;gap:10px}.gate{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:14px;background:#f8fafc}.gate b{display:block}.gate small{color:var(--muted)}.filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}.filter{padding:8px 10px;border-radius:999px;background:white;border:1px solid var(--line);font-size:12px;color:var(--muted);font-weight:700}.filter.on{background:#0f172a;color:white}.heat{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}.heat div{padding:12px;border-radius:14px;text-align:center;background:#f8fafc;border:1px solid var(--line)}.heat b{display:block;font-size:20px}.heat span{display:block;color:var(--muted);font-size:11px}.footer-note{font-size:12px;color:var(--muted);margin-top:20px;line-height:1.5}
+@media(max-width:1200px){.app{grid-template-columns:1fr}.side{position:relative;height:auto}.side .note{position:static;margin-top:20px}.kpis,.two,.three{grid-template-columns:1fr}.flow,.trace{grid-template-columns:1fr}.stage:after{content:"↓";right:20px;top:auto;bottom:-18px}.trace .arrow{transform:rotate(90deg)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><div class="logo"></div><div><h1>MobilityApps<br>Control Tower</h1><small>Ecosistema 360</small></div></div>
+    <nav class="nav">
+      <a class="active" href="#">Resumen ejecutivo</a>
+      <a href="#flujo">Flujo CP end-to-end</a>
+      <a href="#trazabilidad">Trazabilidad</a>
+      <a href="#qa">QA y defectos</a>
+      <a href="#devops">DevOps / Release</a>
+      <a href="#riesgos">Riesgos y bloqueos</a>
+      <a href="#decisiones">Decisiones</a>
+    </nav>
+    <div class="note">Prototipo con datos demo. La fuente de verdad propuesta es Azure DevOps; esta torre consolida, alerta y explica el flujo.</div>
+  </aside>
+  <main class="main">
+    <div class="top">
+      <div class="title">
+        <h2>Torre de Control del Ecosistema MobilityApps</h2>
+        <p>Tracking de iniciativas, HU, bugs, CPs, QA, DevOps y aprobación de negocio de inicio a fin.</p>
+      </div>
+      <div class="actions"><button class="btn">Exportar semanal</button><button class="btn primary">Ver bloqueos críticos</button></div>
+    </div>
+
+    <section class="grid kpis">
+      <div class="card kpi"><div class="label">Iniciativas activas</div><div class="num">42</div><div class="trend">+6 esta semana</div></div>
+      <div class="card kpi"><div class="label">Bloqueadas</div><div class="num" style="color:var(--red)">7</div><div class="trend">3 por definición funcional</div></div>
+      <div class="card kpi"><div class="label">Lead time prom.</div><div class="num">18.4d</div><div class="trend">objetivo: &lt; 14d</div></div>
+      <div class="card kpi"><div class="label">Bugs críticos</div><div class="num" style="color:var(--amber)">5</div><div class="trend">2 sin owner</div></div>
+      <div class="card kpi"><div class="label">Trazabilidad completa</div><div class="num" style="color:var(--green)">68%</div><div class="trend">HU→QA→Release</div></div>
+      <div class="card kpi"><div class="label">Gates pendientes</div><div class="num" style="color:var(--purple)">13</div><div class="trend">QA: 6 · Negocio: 4</div></div>
+    </section>
+
+    <section id="flujo" class="card" style="margin-top:18px">
+      <div class="section-title"><h3>Flujo end-to-end por etapa</h3><span>Azure → CPs → Dev → QA → DevOps → Negocio</span></div>
+      <div class="flow">
+        <div class="stage"><h4>Reportado Azure</h4><div class="count">9</div><small>intake / backlog</small><div class="bar"><i style="width:72%"></i></div></div>
+        <div class="stage"><h4>CP1 Análisis</h4><div class="count">6</div><small>reglas y criterios</small><div class="bar"><i style="width:55%"></i></div></div>
+        <div class="stage"><h4>CP2 SPEC</h4><div class="count">4</div><small>arquitectura / QA</small><div class="bar"><i style="width:40%"></i></div></div>
+        <div class="stage"><h4>CP3 Dev</h4><div class="count">11</div><small>ramas / PR / unitarias</small><div class="bar"><i style="width:76%"></i></div></div>
+        <div class="stage"><h4>CP4 QA</h4><div class="count">8</div><small>funcional / UX / regresión</small><div class="bar"><i style="width:61%"></i></div></div>
+        <div class="stage"><h4>DevOps</h4><div class="count">3</div><small>pipeline / release</small><div class="bar"><i style="width:35%"></i></div></div>
+        <div class="stage"><h4>Negocio</h4><div class="count">1</div><small>aceptación</small><div class="bar"><i style="width:20%"></i></div></div>
+        <div class="stage"><h4>Producción</h4><div class="count">0</div><small>monitoreo valor</small><div class="bar"><i style="width:10%"></i></div></div>
+      </div>
+    </section>
+
+    <section class="grid two" style="margin-top:18px">
+      <div class="card">
+        <div class="section-title"><h3>Iniciativas prioritarias</h3><span>datos demo</span></div>
+        <div class="filters"><span class="filter on">Todas</span><span class="filter">Bloqueadas</span><span class="filter">QA</span><span class="filter">DevOps</span><span class="filter">Negocio</span></div>
+        <table class="table">
+          <thead><tr><th>ID</th><th>Proyecto</th><th>Etapa</th><th>Owner</th><th>Riesgo</th><th>Próximo gate</th></tr></thead>
+          <tbody>
+            <tr><td class="id">MA-1042</td><td>Kameleon Dynamic UI</td><td><span class="pill p-purple">CP3 Dev</span></td><td>Dev Android</td><td class="risk-med">Medio</td><td>Unitarias + PR</td></tr>
+            <tr><td class="id">MA-1037</td><td>QA Evidence Hub</td><td><span class="pill p-green">CP4 QA</span></td><td>QA</td><td class="risk-high">Alto</td><td>Evidencia completa</td></tr>
+            <tr><td class="id">MA-1028</td><td>Pipeline Azure</td><td><span class="pill p-amber">DevOps</span></td><td>DevOps</td><td class="risk-med">Medio</td><td>Release candidate</td></tr>
+            <tr><td class="id">MA-1019</td><td>Sentry Radar</td><td><span class="pill p-cyan">Monitoreo</span></td><td>QA / SRE</td><td class="risk-low">Bajo</td><td>Validación postprod</td></tr>
+            <tr><td class="id">MA-1008</td><td>Pedido Offline</td><td><span class="pill p-red">Bloqueado</span></td><td>PO / Negocio</td><td class="risk-high">Alto</td><td>Definición reglas</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="section-title"><h3>Alertas de handoff</h3><span>SLA operativo</span></div>
+        <div class="timeline">
+          <div class="event"><div class="dot" style="background:var(--red);box-shadow:0 0 0 5px var(--red2)"></div><div><b>MA-1008 bloqueado 5 días</b><span>Falta definición de negocio para reglas de pedido offline.</span></div></div>
+          <div class="event"><div class="dot" style="background:var(--amber);box-shadow:0 0 0 5px var(--amber2)"></div><div><b>MA-1037 QA sin evidencia UX</b><span>Gate CP4 pendiente de evidencia visual y accesibilidad.</span></div></div>
+          <div class="event"><div class="dot" style="background:var(--blue)"></div><div><b>MA-1028 listo para DevOps</b><span>Requiere ventana y aprobación de release candidate.</span></div></div>
+          <div class="event"><div class="dot" style="background:var(--green);box-shadow:0 0 0 5px var(--green2)"></div><div><b>MA-1019 monitoreo sano</b><span>Último radar PASS; sin candidatos nuevos.</span></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="trazabilidad" class="card" style="margin-top:18px">
+      <div class="section-title"><h3>Matriz de trazabilidad — MA-1042 Kameleon Dynamic UI</h3><span>requisito → producción</span></div>
+      <div class="trace">
+        <div class="box"><b>Req.</b><span>RQ-UI-17</span></div><div class="arrow">→</div>
+        <div class="box"><b>HU</b><span>HU-3281</span></div><div class="arrow">→</div>
+        <div class="box"><b>Tareas</b><span>5 abiertas</span></div><div class="arrow">→</div>
+        <div class="box"><b>PR</b><span>2 en review</span></div><div class="arrow">→</div>
+        <div class="box"><b>QA</b><span>12 casos</span></div>
+      </div>
+      <div class="trace" style="margin-top:8px">
+        <div class="box"><b>Evidencia</b><span>8 archivos</span></div><div class="arrow">→</div>
+        <div class="box"><b>Bugs</b><span>3 abiertos</span></div><div class="arrow">→</div>
+        <div class="box"><b>Release</b><span>pendiente</span></div><div class="arrow">→</div>
+        <div class="box"><b>Negocio</b><span>no revisado</span></div><div class="arrow">→</div>
+        <div class="box"><b>Valor</b><span>por medir</span></div>
+      </div>
+    </section>
+
+    <section class="grid three" style="margin-top:18px">
+      <div id="qa" class="card">
+        <div class="section-title"><h3>QA</h3><span>calidad y evidencia</span></div>
+        <div class="heat">
+          <div><b>128</b><span>casos plan</span></div><div><b>91</b><span>ejecutados</span></div><div><b>83%</b><span>pass rate</span></div><div><b>17</b><span>bugs</span></div><div><b>6</b><span>reabiertos</span></div>
+        </div>
+        <div class="gates" style="margin-top:14px">
+          <div class="gate"><div><b>CP4 Functional</b><small>regresión + evidencia</small></div><span class="pill p-amber">pendiente</span></div>
+          <div class="gate"><div><b>UX / Diseño</b><small>visual + accesibilidad</small></div><span class="pill p-red">bloqueado</span></div>
+        </div>
+      </div>
+      <div id="devops" class="card">
+        <div class="section-title"><h3>DevOps</h3><span>pipelines y release</span></div>
+        <div class="gates">
+          <div class="gate"><div><b>Build Android</b><small>última corrida demo</small></div><span class="pill p-green">pass</span></div>
+          <div class="gate"><div><b>Quality Gate</b><small>unitarias + lint</small></div><span class="pill p-amber">warning</span></div>
+          <div class="gate"><div><b>Release Candidate</b><small>requiere aprobación</small></div><span class="pill p-blue">ready</span></div>
+          <div class="gate"><div><b>Rollback Plan</b><small>documento pendiente</small></div><span class="pill p-red">faltante</span></div>
+        </div>
+      </div>
+      <div id="riesgos" class="card">
+        <div class="section-title"><h3>Riesgos</h3><span>top bloqueos</span></div>
+        <table class="table">
+          <tbody>
+            <tr><td class="risk-high">Alto</td><td>HU sin criterios de aceptación</td><td>4</td></tr>
+            <tr><td class="risk-high">Alto</td><td>Bugs críticos sin fecha</td><td>2</td></tr>
+            <tr><td class="risk-med">Medio</td><td>QA sin ambiente estable</td><td>3</td></tr>
+            <tr><td class="risk-med">Medio</td><td>PR sin reviewer</td><td>5</td></tr>
+            <tr><td class="risk-low">Bajo</td><td>Evidencia incompleta</td><td>8</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="decisiones" class="card" style="margin-top:18px">
+      <div class="section-title"><h3>Decisiones para iniciar MVP</h3><span>próximo paso recomendado</span></div>
+      <table class="table">
+        <thead><tr><th>Decisión</th><th>Owner sugerido</th><th>Impacto</th><th>Estado</th></tr></thead>
+        <tbody>
+          <tr><td>Seleccionar proyecto piloto en Azure DevOps</td><td>Dirección / PO</td><td>Define alcance V1</td><td><span class="pill p-amber">pendiente</span></td></tr>
+          <tr><td>Confirmar definición oficial CP1–CP5</td><td>Arquitectura / QA</td><td>Evita ambigüedad</td><td><span class="pill p-amber">pendiente</span></td></tr>
+          <tr><td>Aprobar modelo read-only inicial</td><td>DevOps / Seguridad</td><td>Reduce riesgo de integración</td><td><span class="pill p-blue">propuesto</span></td></tr>
+          <tr><td>Definir KPIs ejecutivos y operativos</td><td>Sponsor / Líderes</td><td>Alinea comunicación</td><td><span class="pill p-blue">propuesto</span></td></tr>
+        </tbody>
+      </table>
+      <p class="footer-note"><b>Principio operativo:</b> la torre consolida datos y evidencia; Azure DevOps sigue siendo la fuente de verdad. Las acciones sensibles —aprobaciones, cambios de estado, release o cierre— requieren responsable humano autorizado.</p>
+    </section>
+  </main>
+</div>
+</body>
+</html>

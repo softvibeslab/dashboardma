@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="es" data-repo-governance>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Repositorios y alertas · MobilityApps Control Tower</title>
+  <link rel="stylesheet" href="/dashboard/styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand-block">
+        <div class="brand-icon"></div>
+        <div>
+          <strong>MobilityApps<br />Control Tower</strong>
+          <span>Repo Sync Governance</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <a href="/dashboard">← Dashboard principal</a>
+        <a class="active" href="/dashboard/repositories">Repositorios</a>
+        <a href="/dashboard/repository-owners">Responsables</a>
+        <a href="/dashboard/alerts">Alertas</a>
+        <a href="/dashboard/users">Usuarios y asignaciones</a>
+        <a href="/dashboard/modules/devops">DevOps</a>
+      </nav>
+      <p class="sidebar-note">Mantiene repos por perfil y área. Cualquier error debe notificar a Roger, Teamwork Mobility y al responsable del repositorio.</p>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div>
+          <h1>Repositorios y alertas</h1>
+          <p>CRUD de repositorios, responsables por repo y centro de alertas para jobs de actualización.</p>
+        </div>
+        <div class="top-actions">
+          <button class="ghost-button" id="refreshBtn">Actualizar vista</button>
+          <a class="primary-button" href="/dashboard">Volver</a>
+        </div>
+      </header>
+
+      <section class="kpi-grid users-kpis" id="repoKpis"></section>
+
+      <section class="panel users-panel">
+        <div class="panel-head"><h2>Configuración de repositorios</h2><span>rama · perfil · responsable · job</span></div>
+        <div class="crud-grid repo-crud-grid">
+          <form id="repoForm" class="form-card">
+            <h3>Repositorio</h3>
+            <input name="name" placeholder="Nombre del repo" required />
+            <input name="area" placeholder="Área: android, backend, qa" required />
+            <input name="profileId" placeholder="Perfil: android, backend, qa" />
+            <input name="localPath" placeholder="Ruta local" required />
+            <input name="remote" placeholder="Remote Azure DevOps/Git" required />
+            <input name="canonicalBranch" placeholder="Rama canónica" value="develop" />
+            <input name="currentBranch" placeholder="Rama actual" />
+            <select name="updatePolicy">
+              <option value="canonical">canonical</option>
+              <option value="taskBranch">taskBranch</option>
+              <option value="latestRemoteCommit">latestRemoteCommit</option>
+              <option value="protected">protected</option>
+            </select>
+            <select name="status">
+              <option value="UNKNOWN">UNKNOWN</option>
+              <option value="UP_TO_DATE">UP_TO_DATE</option>
+              <option value="BEHIND">BEHIND</option>
+              <option value="PAT_EXPIRED">PAT_EXPIRED</option>
+              <option value="ACCESS_DENIED">ACCESS_DENIED</option>
+              <option value="DIRTY_WORKTREE">DIRTY_WORKTREE</option>
+              <option value="DIVERGED">DIVERGED</option>
+            </select>
+            <input name="responsibleIds" placeholder="Responsables IDs separados por coma" />
+            <input name="frequencyMinutes" type="number" min="5" placeholder="Frecuencia minutos" value="60" />
+            <select name="criticality"><option>high</option><option>medium</option><option>low</option></select>
+            <button class="primary-button" type="submit">Guardar repositorio</button>
+          </form>
+          <div>
+            <div class="filter-row"><input id="repoFilter" placeholder="Filtrar repositorios" /></div>
+            <div id="repoList" class="metric-list users-long-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel users-panel">
+        <div class="panel-head"><h2>Responsables por repositorio</h2><span>correo · telegram · canal preferido</span></div>
+        <div class="crud-grid repo-crud-grid">
+          <form id="ownerForm" class="form-card assignment-form">
+            <h3>Responsable</h3>
+            <input name="displayName" placeholder="Nombre responsable" required />
+            <input name="email" type="email" placeholder="Correo" />
+            <input name="telegramId" placeholder="Telegram ID" />
+            <input name="preferredChannels" placeholder="email,telegram" value="email,telegram" />
+            <select name="active"><option value="true">Activo</option><option value="false">Inactivo</option></select>
+            <button class="primary-button" type="submit">Guardar responsable</button>
+          </form>
+          <div id="ownerList" class="metric-list users-long-list"></div>
+        </div>
+      </section>
+
+      <section class="panel users-panel">
+        <div class="panel-head"><h2>Centro de alertas</h2><span>PAT vencido · sin acceso · errores de fetch/pull</span></div>
+        <div class="crud-grid repo-crud-grid">
+          <form id="alertForm" class="form-card assignment-form">
+            <h3>Alerta</h3>
+            <input name="repoId" placeholder="Repo ID" required />
+            <select name="status">
+              <option value="PAT_EXPIRED">PAT_EXPIRED</option>
+              <option value="AUTH_FAILED">AUTH_FAILED</option>
+              <option value="ACCESS_DENIED">ACCESS_DENIED</option>
+              <option value="FETCH_FAILED">FETCH_FAILED</option>
+              <option value="PULL_FAILED">PULL_FAILED</option>
+              <option value="DIRTY_WORKTREE">DIRTY_WORKTREE</option>
+              <option value="DIVERGED">DIVERGED</option>
+              <option value="UNKNOWN_ERROR">UNKNOWN_ERROR</option>
+            </select>
+            <select name="severity"><option value="critical">critical</option><option value="high">high</option><option value="medium">medium</option><option value="low">low</option></select>
+            <input name="message" placeholder="Mensaje saneado" required />
+            <button class="primary-button" type="submit">Registrar alerta</button>
+          </form>
+          <div id="alertList" class="metric-list users-long-list"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/dashboard/repositories/repositories.js" type="module"></script>
+</body>
+</html>
