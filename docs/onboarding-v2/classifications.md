@@ -1,9 +1,9 @@
 # Módulo de clasificaciones y participación
 
 ## Estado y ubicación
-Implementado y probado en rama `feature/classification-participation`, carpeta `/root/workspaces/dashboardma-classifications`. No desplegado por esta entrega: la V2 publicada y sus datos permanecen sin cambios.
+Implementado y probado en rama `feature/classification-participation`, carpeta `/root/workspaces/dashboardma-classifications`. El módulo fue publicado después de la validación inicial; ver `classifications-publication.md` para release, controles verificados y habilitación de coordinador todavía pendiente.
 
-Entrada de esta versión: `/dashboard/onboarding-v2/classifications` cuando se configura el prefijo V2. El encabezado del onboarding enlaza al módulo. No usar esta ruta como evidencia de que ya existe en la versión pública.
+Entrada publicada: https://iamobilityappsinc.com/dashboard/onboarding-v2/classifications. El encabezado del onboarding enlaza al módulo. El acceso conserva el RBAC explícito existente; disponer de una identidad Azure en la fuente no concede acceso a V2.
 
 ## Funcionalidad
 - CRUD de frentes: nombre, descripción y activo/inactivo. ID estable generado por el servidor. Nombres únicos sin distinguir mayúsculas.
@@ -59,4 +59,4 @@ El modo de revisión local no debe publicarse ni considerarse autenticación cor
 - Detector visual: sin hallazgos mecánicos; no se afirma certificación WCAG ni pentest integral.
 
 ## Pendiente para siguientes etapas
-Publicar esta rama y montar la proyección sanitizada en el runtime V2 con permisos correctos; asignar coordinadores explícitos; conectar el catálogo como selector gobernado de la fase 2; consultar carga/capacidad real y construir recomendaciones explicables. Los frentes y participaciones no modifican Assigned To ni crean tareas en Azure en esta entrega.
+Autorizar coordinadores explícitos e importar la fuente sanitizada desde una sesión autorizada; conectar el catálogo como selector gobernado de la fase 2; consultar carga/capacidad real y construir recomendaciones explicables. La rama y el módulo ya se publicaron, con el directorio sanitizado montado read-only; ver `classifications-publication.md`. Los frentes y participaciones no modifican Assigned To ni crean tareas en Azure en esta entrega.
