@@ -16,6 +16,8 @@ Entrada publicada: https://iamobilityappsinc.com/dashboard/onboarding-v2/classif
 - Escritor único, cola y reemplazo atómico; revisión optimista bloquea sobrescrituras de sesiones desactualizadas. No es una base de datos multiproceso ni una bitácora externa inmutable.
 
 ## Acceso e integridad
+Consulta pública aprobada posteriormente: el listado reducido de nombres/frentes ya está visible sin sesión mediante `/api/directory`; ver `public-directory.md`. No publica el directorio privado completo ni habilita edición. El resto de este apartado describe la administración privada.
+
 Usa las sesiones y el RBAC explícito de V2. Lectura para usuarios autorizados; cualquier cambio y la importación de directorio requieren `coordinator`. El control se aplica en servidor, no solo en botones. Los POST verifican el Origin exacto existente. No se otorgan permisos por email declarado ni por pertenencia al catálogo. No se escriben datos en Azure.
 
 ## Fuente Azure: frontera real
