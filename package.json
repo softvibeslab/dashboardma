@@ -9,7 +9,8 @@
     "start:legacy": "node src/server.js",
     "setup:v2": "node scripts/onboarding-v2-local-review.js",
     "test:v2": "node --test test/v2*.test.js",
-    "check:v2": "node --check src/onboarding-v2/server.js && node --check src/onboarding-v2/model.js && node --check public/onboarding-v2/app.js",
+    "check:v2": "node --check src/onboarding-v2/server.js && node --check src/onboarding-v2/model.js && node --check public/onboarding-v2/app.js && node --check src/onboarding-v2/classifications.js && node --check public/onboarding-v2/classifications.js && node --check scripts/export-v2-azure-directory.js",
+    "test:classifications": "node --test test/v2-classifications*.test.js",
     "test": "node --test",
     "check": "node --check src/server.js && node --check src/azure-import.js && node --check src/store.js && node --check src/auth.js && node --check src/enrichment.js && node --check src/workspace.js && node --check src/answers.js && node --check src/wizard.js && node --check src/technology-suggestion.js && node --check public/dashboard/requirements/onboarding/technology-suggestion.js && node --check public/dashboard/requirements/app.js && node --check public/dashboard/requirements/enrichment-view.js && node --check public/dashboard/requirements/collaboration.js && node --check public/dashboard/requirements/answers.js && node --check public/dashboard/requirements/onboarding/app.js && node --check public/dashboard/requirements/onboarding/intake.js && node --check public/dashboard/requirements/onboarding/azure-sources.js && node --check public/dashboard/requirements/flow/app.js"
   },

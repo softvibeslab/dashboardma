@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Clasificaciones y participación · MobilityApps</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/classifications.css"><script type="module" src="/classifications.js"></script></head>
+<body class="catalog-page">
+<a class="skip" href="#catalogMain">Ir al catálogo</a>
+<header><a class="brand" href="/">Mobility<span>Apps</span></a><span class="edition">Clasificaciones y participación</span><a href="/">Volver al onboarding</a><span id="catalogIdentity">Comprobando sesión…</span></header>
+<main id="catalogMain" class="catalog-main">
+<h1>Clasificaciones y participación</h1>
+<p class="intro">Define los frentes y quién puede desarrollar, revisar o apoyar en cada uno. Esta clasificación no cambia equipos, permisos ni asignaciones en Azure DevOps.</p>
+<p id="catalogMessage" role="status" aria-live="polite">Cargando catálogo…</p>
+<p id="accessHelp" hidden><a href="/">Iniciar sesión desde el onboarding</a>. Se requiere una identidad autorizada para la V2.</p>
+<div id="catalogWorkspace" hidden>
+<div class="catalog-toolbar"><span id="catalogRevision"></span><button id="catalogReload">Recargar catálogo</button><span id="readOnly" hidden>Solo lectura. Un coordinador administra los registros.</span></div>
+<nav class="catalog-nav" aria-label="Secciones del catálogo"><a href="#frontSection">Frentes</a><a href="#peopleSection">Participación de personas</a><a href="#historySection">Historial</a></nav>
+<section id="frontSection" aria-labelledby="frontHeading">
+<div class="section-heading"><div><h2 id="frontHeading">Frentes de trabajo</h2><p>Una especialidad, no un área de negocio. Desactiva un frente para conservar sus relaciones.</p></div><button id="newFront" class="primary">Crear frente</button></div>
+<form id="frontForm" class="catalog-editor" hidden>
+<h3 id="frontFormTitle">Crear frente</h3><input id="frontId" type="hidden">
+<div class="fields"><label>Nombre<input id="frontName" required maxlength="120" placeholder="Ej. Android"></label><label class="check"><input id="frontActive" type="checkbox" checked>Frente activo</label><label class="wide">Descripción<textarea id="frontDescription" maxlength="2000" rows="2"></textarea></label></div>
+<div class="actions"><button type="submit" class="primary">Guardar frente</button><button type="button" id="cancelFront">Cancelar</button></div>
+</form>
+<div id="frontList" class="table-wrap"></div>
+</section>
+<section id="peopleSection" aria-labelledby="peopleHeading">
+<div class="section-heading"><div><h2 id="peopleHeading">Participación de personas</h2><p>Una persona puede participar en varios frentes y tener un frente principal habilitado.</p></div><button id="newParticipation" class="primary">Asignar participación</button></div>
+<div class="source-row"><p id="directoryStatus"></p><button id="syncDirectory">Actualizar usuarios desde la copia de Azure</button></div>
+<p class="muted">Se muestran identidades de una copia sincronizada, no disponibilidad en tiempo real. “Habilitado para asignaciones” es una decisión del coordinador; no acredita capacidad libre.</p>
+<form id="participationForm" class="catalog-editor" hidden>
+<h3 id="participationFormTitle">Asignar participación</h3><input id="participationId" type="hidden">
+<div class="fields"><label>Persona de Azure<select id="participationUser" required></select></label><label>Frente<select id="participationFront" required></select></label><label>Nivel<select id="participationLevel"><option value="principal">Principal</option><option value="secondary">Secundario</option></select></label><label class="check"><input id="participationEnabled" type="checkbox" checked>Habilitado para nuevas asignaciones</label></div>
+<fieldset><legend>Puede participar como</legend><div class="checkboxes"><label class="check"><input type="checkbox" name="participationRole" value="developer">Desarrollador</label><label class="check"><input type="checkbox" name="participationRole" value="reviewer">Revisor</label><label class="check"><input type="checkbox" name="participationRole" value="support">Apoyo</label></div></fieldset>
+<fieldset><legend>Proyectos autorizados para esta participación</legend><div id="participationProjects" class="checkboxes"></div></fieldset>
+<label>Observaciones<textarea id="participationNotes" maxlength="2000" rows="2"></textarea></label>
+<p class="muted">Guardar confirma esta clasificación con tu identidad. No concede permisos de acceso ni escribe en Azure.</p>
+<div class="actions"><button type="submit" class="primary">Guardar participación</button><button type="button" id="cancelParticipation">Cancelar</button></div>
+</form>
+<div class="catalog-filters" role="search" aria-label="Filtrar participaciones"><label>Buscar persona<input id="filterQuery" type="search" placeholder="Nombre o correo"></label><label>Frente<select id="filterFront"><option value="">Todos</option></select></label><label>Proyecto<select id="filterProject"><option value="">Todos</option></select></label><label>Participación<select id="filterRole"><option value="">Todas</option><option value="developer">Desarrollador</option><option value="reviewer">Revisor</option><option value="support">Apoyo</option></select></label><label>Habilitación<select id="filterEnabled"><option value="">Todas</option><option value="true">Habilitadas</option><option value="false">No habilitadas</option></select></label></div>
+<p id="resultCount" role="status" aria-live="polite"></p><div id="participationList" class="table-wrap"></div>
+</section>
+<section id="historySection" aria-labelledby="historyHeading"><h2 id="historyHeading">Historial de cambios</h2><p>Incluye autor, fecha y valores anteriores y posteriores. No sustituye una bitácora externa inmutable.</p><div id="catalogHistory"></div></section>
+</div>
+</main>
+</body></html>
