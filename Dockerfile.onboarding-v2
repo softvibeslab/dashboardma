@@ -1,0 +1,17 @@
+FROM node:24-alpine
+WORKDIR /app
+ENV NODE_ENV=production \
+    V2_PORT=4191 \
+    V2_LISTEN_HOST=0.0.0.0 \
+    V2_BASE_PATH=/dashboard/onboarding-v2 \
+    V2_AUTH_MODE=sso \
+    V2_DATA_FILE=/app/data/onboarding-v2/state.json \
+    V2_IDENTITY_ROLES_FILE=/run/v2/roles.json
+COPY --chown=node:node package.json ./
+COPY --chown=node:node src/auth.js ./src/auth.js
+COPY --chown=node:node src/onboarding-v2 ./src/onboarding-v2
+COPY --chown=node:node public/onboarding-v2 ./public/onboarding-v2
+RUN mkdir -p /app/data/onboarding-v2 && chown -R node:node /app/data
+USER node
+EXPOSE 4191
+CMD ["node", "src/onboarding-v2/server.js"]

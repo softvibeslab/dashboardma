@@ -1,3 +1,19 @@
+# MobilityApps — Onboarding V2 independiente
+
+Esta rama es una **candidata local de onboarding**, no una actualización del dashboard público. `npm start` inicia únicamente V2 en `127.0.0.1:4191`. No utiliza `.env.auth`, datos productivos ni credenciales existentes.
+
+- [Arranque, operación y límites reales de V2](docs/onboarding-v2/README.md)
+- [Matriz de cobertura y evidencia QA](docs/onboarding-v2/coverage.md)
+- [Plan de implementación](docs/plans/onboarding-v2.md)
+
+Las siete fases son operativas en modo de revisión local con identidades y roles configurados en servidor. Hay un consumidor de sesión SSO existente con RBAC V2 explícito, **probado con cookies firmadas sintéticas, todavía no con Entra real**. **IA y Azure no están conectados a esta entrada V2**: el código original y sus pruebas se conservan sin cambios; no se afirma ejecución de esas integraciones. Las decisiones locales se etiquetan `local-review` y no son aprobaciones productivas.
+
+---
+
+## Referencia histórica: aplicación original (no describe V2)
+
+El contenido siguiente corresponde a la base original. Su comando de arranque en esta rama es `npm run start:legacy`, no `npm start`. No arrancarlo sobre datos ni credenciales de producción para probar V2.
+
 # MobilityApps Ecosystem Control Tower — MVP funcional
 
 URL pública:

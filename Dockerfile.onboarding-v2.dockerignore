@@ -1,0 +1,10 @@
+**
+!Dockerfile.onboarding-v2
+!package.json
+!src/
+!src/auth.js
+!src/onboarding-v2/
+!src/onboarding-v2/**
+!public/
+!public/onboarding-v2/
+!public/onboarding-v2/**

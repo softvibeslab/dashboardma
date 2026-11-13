@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {spawnSync} from 'node:child_process';import {readFile,stat,rm} from 'node:fs/promises';
+test('local review setup creates only fresh scratch identities, restrictive permissions and no fixed secrets',async()=>{
+ const r=spawnSync(process.execPath,['scripts/onboarding-v2-local-review.js'],{encoding:'utf8'});assert.equal(r.status,0,r.stderr);const info=JSON.parse(r.stdout);assert.match(info.usersFile,/\/root\/\.hermes\/cache\/scratch\/onboarding-v2-review-/);const users=JSON.parse(await readFile(info.usersFile,'utf8'));assert.equal(users.length,2);assert.notEqual(users[0].token,users[1].token);assert.ok(users.every(u=>u.token.length>=40));assert.equal((await stat(info.usersFile)).mode&0o777,0o600);await rm(info.directory,{recursive:true,force:true});
+});
