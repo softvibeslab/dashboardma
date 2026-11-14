@@ -5,7 +5,7 @@ export const digest = s => hash(s.phases);
 // Server-side allowlist: draft incompleteness is allowed, forged statuses and malformed shapes are not.
 const shapes={
  1:{scalar:['title','owner','context','constraints'],lists:{sources:['id','kind','name','text','status'],questions:['id','question','owner','blocking','answer','rationale']}},
- 2:{scalar:[],lists:{fronts:['id','deliverable','repository','owner','reviewer','discipline','area','dependencies','contract','confirmed']}},
+ 2:{scalar:['catalogToken','catalogRevision','directorySyncedAt'],lists:{fronts:['id','deliverable','repository','owner','reviewer','discipline','area','dependencies','contract','confirmed','catalogFrontId','project','ownerName','reviewerName','selectionToken','confirmedBy','confirmedAt']}},
  3:{scalar:[],lists:{sections:['id','front','title','body'],criteria:['id','section','text','critical']}},
  4:{scalar:['reviewer','notes','humanReview','aiStatus'],lists:{findings:['id','section','description','severity','owner','status','resolution','exceptionApprover']}},
  5:{scalar:['kind','reviewer','plan','build','environment','reviewed'],lists:{cases:['id','criterion','risk','steps','expected','status','result','executor','evidence','reviewer'],defects:['id','case','description','owner','severity','status','evidence','decision']}},
@@ -92,6 +92,7 @@ export function packageFor(s){
  // Receipt is an external acknowledgment of an immutable package, not part of its content.
  return {...payload,hash:hash(payload)};
 }
+export const frontIdentityMatches=(actor,front,field)=>Boolean(front?.catalogFrontId?actor.azureIdentityKey&&actor.azureIdentityKey===front[field]:actor.id===front?.[field]);
 export function change(state,a,actor){
  if(!actor?.authenticated)throw Error('Se requiere identidad autenticada.');
  if(a.revision!==state.revision)throw Error('Conflicto de versión: recarga antes de guardar.');
@@ -102,14 +103,14 @@ export function change(state,a,actor){
   const data=structuredClone(a.data);validateDraft(a.phase,data);
   s.epochs||={};
   for(const object of objects(s)){if(a.phase<=4||a.phase===5&&object==='tests')s.epochs[object]=(s.epochs[object]||0)+1;}
-  const assignments=(p,v)=>p===1?{owner:v.owner}:p===2?(v.fronts||[]).map(f=>({id:f.id,owner:f.owner,reviewer:f.reviewer})):p===4||p===5?{reviewer:v.reviewer}:p===7?{recipient:v.recipient}:{};
+  const assignments=(p,v)=>p===1?{owner:v.owner}:p===2?(v.fronts||[]).map(f=>({id:f.id,owner:f.owner,reviewer:f.reviewer,catalogFrontId:f.catalogFrontId,project:f.project})):p===4||p===5?{reviewer:v.reviewer}:p===7?{recipient:v.recipient}:{};
   const previous=assignments(a.phase,s.phases[a.phase]);
   const existingAssignment=a.phase===2?(s.phases[2].fronts||[]).length: Object.values(previous).some(Boolean);
   if(existingAssignment&&hash(previous)!==hash(assignments(a.phase,data))&&!actor.roles.includes('coordinator'))throw Error('Solo el coordinador puede cambiar asignaciones existentes.');
   if(a.phase===4)data.humanReview=false;
   if(a.phase===5)data.reviewed=false;
   if(a.phase===1)data.sources=(data.sources||[]).map(v=>({...v,status:v.kind==='text'&&v.text?'extracted':'referenced'}));
-  if(a.phase===2)data.fronts=(data.fronts||[]).map(f=>{const {confirmed,...rest}=f;const old=(s.phases[2].fronts||[]).find(x=>x.id===f.id);const {confirmed:previous,...prior}=old||{};return {...rest,confirmed:!!previous&&hash(rest)===hash(prior)};});
+  if(a.phase===2)data.fronts=(data.fronts||[]).map(f=>{const {confirmed,confirmedBy,confirmedAt,...rest}=f;const old=(s.phases[2].fronts||[]).find(x=>x.id===f.id);const {confirmed:previous,confirmedBy:priorBy,confirmedAt:priorAt,...prior}=old||{};const keep=!!previous&&hash(rest)===hash(prior);return {...rest,confirmed:keep,...(keep&&priorBy?{confirmedBy:priorBy,confirmedAt:priorAt}:{})};});
   s.history.push({revision:s.revision,phases:structuredClone(s.phases),hash:digest(s)});
   s.phases[a.phase]=data;
   if(a.phase<=3){s.phases[4].humanReview=false;s.phases[5].reviewed=false;}
@@ -120,8 +121,8 @@ export function change(state,a,actor){
   if([1,2,3,...(a.phase===5?[4]:[])].some(p=>blockers(s,p).length)||blockers(s,a.phase).length)throw Error('Resuelve los bloqueos antes de registrar revisión.');
  }else if(a.type==='confirm'){
   const f=(s.phases[2].fronts||[]).find(x=>x.id===a.front);
-  if(!f||f.owner!==actor.id||!actor.roles.includes('editor'))throw Error('Solo el responsable asignado puede confirmar el frente.');
-  f.confirmed=true;
+  if(!f||!frontIdentityMatches(actor,f,'owner')||!actor.roles.includes('editor'))throw Error('Solo el responsable asignado puede confirmar el frente.');
+  f.confirmed=true;f.confirmedBy=actor.id;f.confirmedAt=at;
  }else if(a.type==='comment'){
   if(!actor.roles.some(r=>['editor','reviewer','qa'].includes(r))||!a.text?.trim()||!(a.section==='shared'||s.phases[3].sections.some(x=>x.id===a.section)))throw Error('Comentario o sección inválidos.');
   s.comments.push({section:a.section,text:a.text,actor:actor.id,version:s.revision,hash:digest(s),at});
@@ -129,7 +130,9 @@ export function change(state,a,actor){
   if(a.hash!==objectHash(s,a.object))throw Error('El hash del objeto cambió; recarga.');
   const assigned=a.object==='spec'?s.phases[4].reviewer:a.object==='tests'?s.phases[5].reviewer:s.phases[2].fronts.find(f=>`front:${f.id}`===a.object)?.reviewer;
   const role=a.object==='tests'?'qa':'reviewer';
-  if(!actor.roles.includes(role)||assigned!==actor.id||actor.id===s.phases[1].owner)throw Error('Se requiere rol y revisor asignado independiente.');
+  const assignedFront=s.phases[2].fronts.find(f=>`front:${f.id}`===a.object);
+  const matches=assignedFront?frontIdentityMatches(actor,assignedFront,'reviewer'):assigned===actor.id;
+  if(!actor.roles.includes(role)||!matches||actor.id===s.phases[1].owner)throw Error('Se requiere rol y revisor asignado independiente.');
   if(!['approve','return'].includes(a.decision))throw Error('Decisión inválida.');
   if(a.decision==='return'&&!a.reason?.trim())throw Error('La devolución necesita motivo.');
   if(a.decision==='approve'&&[1,2,3,4,5].some(p=>blockers(s,p).length))throw Error('Resuelve bloqueos antes de aprobar.');

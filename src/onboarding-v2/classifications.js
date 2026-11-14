@@ -42,6 +42,10 @@ export class ClassificationStore {
   }).sort((a,b)=>a.name.localeCompare(b.name,'es'));
   return {source:'azure-devops-snapshot',syncedAt:source.syncedAt,users};
  }
+ async withSnapshot(callback){
+  const work=this.queue.then(async()=>callback(await this.view()));
+  this.queue=work.catch(()=>{});return work;
+ }
  async act(action,actor){
   if(!actor?.authenticated||!actor.roles?.includes('coordinator'))fail('Rol coordinator requerido para administrar clasificaciones.',403);
   only(action,['type','revision','id','data']);

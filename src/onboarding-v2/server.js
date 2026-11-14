@@ -5,10 +5,12 @@ import {readFile,mkdir,writeFile,rename} from 'node:fs/promises';
 import {randomBytes,timingSafeEqual} from 'node:crypto';
 import {getSession} from '../auth.js';
 import {ClassificationStore} from './classifications.js';
+import {StaffingService} from './staffing.js';
 import {initial,change,blockers,digest,objects,objectHash,currentDecision,packageFor} from './model.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/state.json'),users=[],basePath='',authMode='local-review',sessionSecret='',publicOrigin='',classificationFile,directoryFile='',publicDirectory=false}={}){
+export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/state.json'),users=[],basePath='',authMode='local-review',sessionSecret='',publicOrigin='',classificationFile,directoryFile='',publicDirectory=false,staffingRequired=false}={}){
  const catalog=new ClassificationStore(classificationFile||path.join(path.dirname(dataFile),'classifications.json'),{directoryFile});
+ const staffing=new StaffingService(catalog,{directoryFile,identities:users});
  if(basePath&&!/^\/[a-zA-Z0-9/_-]+$/.test(basePath))throw Error('V2_BASE_PATH inválido.');
  basePath=basePath.replace(/\/$/,'');
  if(!['local-review','sso'].includes(authMode))throw Error('V2_AUTH_MODE inválido.');
@@ -37,7 +39,7 @@ export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/stat
    if(authMode!=='local-review')return send(res,403,{error:'Login local deshabilitado en SSO.',loginUrl});
    const {token}=await body(req);const user=users.find(u=>typeof token==='string'&&typeof u.token==='string'&&token.length>=16&&Buffer.byteLength(token)===Buffer.byteLength(u.token)&&timingSafeEqual(Buffer.from(token),Buffer.from(u.token)));
    if(!user)return send(res,401,{error:'Clave de revisión inválida. No es login corporativo.'});
-   const key=randomBytes(32).toString('hex');sessions.set(key,{id:user.id,roles:user.roles,authenticated:true,mode:'local-review',expires:Date.now()+4*3600000});
+   const key=randomBytes(32).toString('hex');sessions.set(key,{id:user.id,roles:user.roles,...(user.azureIdentityKey?{azureIdentityKey:user.azureIdentityKey}:{}),authenticated:true,mode:'local-review',expires:Date.now()+4*3600000});
    res.setHeader('set-cookie',`v2_session=${key}; Path=${basePath||'/'}; HttpOnly; SameSite=Strict; Max-Age=14400${expectedOrigin.startsWith('https:')?'; Secure':''}`);return send(res,200,{ok:true});
   }
   if(url.pathname.startsWith('/api/')){
@@ -48,14 +50,26 @@ export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/stat
     const user=users.find(u=>u.tid===session.tid&&u.oid===session.oid);
     if(url.pathname==='/api/access'&&req.method==='GET')return send(res,200,{mode:'sso',assigned:Boolean(user),identity:{tid:session.tid,oid:session.oid,name:session.name||'',email:session.email||''}});
     if(!user)return send(res,403,{error:'Identidad autenticada sin asignación RBAC V2. Solicita acceso al coordinador.'});
-    actor={id:user.id,roles:user.roles,authenticated:true,mode:'sso',name:session.name||user.id};
+    actor={id:user.id,roles:user.roles,...(user.azureIdentityKey?{azureIdentityKey:user.azureIdentityKey}:{}),authenticated:true,mode:'sso',name:session.name||user.id};
    }else actor=sessions.get(key);
    if(!actor||actor.expires<Date.now())return send(res,401,{error:'Identificación requerida. Revisión local, no autenticación corporativa.'});
    if(url.pathname==='/api/logout'&&req.method==='POST'){
     if(authMode==='sso')return send(res,200,{logoutUrl:'/dashboard/auth/logout'});
     sessions.delete(key);res.setHeader('set-cookie',`v2_session=; Path=${basePath||'/'}; HttpOnly; SameSite=Strict; Max-Age=0`);return send(res,200,{ok:true});
    }
-   const view=async()=>{const state=await read();return {state,actor,hash:digest(state),blockers:Object.fromEntries([1,2,3,4,5,6,7].map(p=>[p,blockers(state,p)])),objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),integrations:{ai:'not-run',azure:'not-connected',repositories:'not-read'}};};
+   const view=async()=>{
+    const state=await read();const pending=Object.fromEntries([1,2,3,4,5,6,7].map(p=>[p,blockers(state,p)]));
+    const options=staffingRequired?await staffing.current():undefined;
+    if(options){
+     if(options.warning)pending[2].push(options.warning);
+     try{staffing.assertCurrent(state.phases[2],options);}catch(e){pending[2].push(e.message);}
+    }
+    return {state,actor,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,integrations:{ai:'not-run',azure:staffingRequired?'snapshot-classification-candidates':'not-connected',repositories:'not-read'}};
+   };
+   if(url.pathname==='/api/staffing'){
+    if(req.method!=='GET')return send(res,405,{error:'Método no permitido.'});
+    return send(res,200,staffingRequired?await staffing.current():{required:false});
+   }
    if(url.pathname==='/api/classifications'){
     if(req.method==='GET')return send(res,200,{catalog:await catalog.view(),canManage:actor.roles.includes('coordinator'),sourceConfigured:Boolean(directoryFile),actor:{id:actor.id,mode:actor.mode}});
     if(req.method==='POST')return send(res,200,{catalog:await catalog.act(await body(req),actor),canManage:true,sourceConfigured:Boolean(directoryFile),actor:{id:actor.id,mode:actor.mode}});
@@ -63,11 +77,21 @@ export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/stat
    }
    if(url.pathname==='/api/state'&&req.method==='GET')return send(res,200,await view());
    if(url.pathname==='/api/package'&&req.method==='GET'){
-    const p=packageFor(await read());res.setHeader('Content-Disposition','attachment; filename="onboarding-v2-package.json"');return send(res,200,p);
+    const exportPackage=async snapshot=>{const state=await read();if(staffingRequired)staffing.assertCurrent(state.phases[2],await staffing.current(snapshot));const p=packageFor(state);res.setHeader('Content-Disposition','attachment; filename="onboarding-v2-package.json"');return send(res,200,p);};
+    return staffingRequired?await catalog.withSnapshot(exportPackage):await exportPackage();
    }
    if(url.pathname==='/api/action'&&req.method==='POST'){
     const action=await body(req);
-    const work=queue.then(async()=>{const next=change(await read(),action,actor);await mkdir(path.dirname(dataFile),{recursive:true});const temp=dataFile+'.pending';await writeFile(temp,JSON.stringify(next,null,2),{mode:0o600});await rename(temp,dataFile);return view();});
+    const run=async snapshot=>{
+     const before=await read();
+     if(staffingRequired){
+      const options=await staffing.current(snapshot);
+      if(action.type==='save'&&action.phase===2)action.data=staffing.resolve(action.data,options);
+      else if(['confirm','review','decide','receipt'].includes(action.type))staffing.assertCurrent(before.phases[2],options);
+     }
+     const next=change(before,action,actor);await mkdir(path.dirname(dataFile),{recursive:true});const temp=dataFile+'.pending';await writeFile(temp,JSON.stringify(next,null,2),{mode:0o600});await rename(temp,dataFile);return view();
+    };
+    const work=queue.then(()=>staffingRequired?catalog.withSnapshot(run):run());
     queue=work.catch(()=>{});return send(res,200,await work);
    }
    return send(res,404,{error:'Ruta no disponible.'});
@@ -84,6 +108,6 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
  const configFile=process.env.V2_IDENTITY_ROLES_FILE||process.env.V2_REVIEW_USERS_FILE;
  const users=configFile?JSON.parse(await readFile(configFile,'utf8')):[];
  const port=Number(process.env.V2_PORT||4191),host=process.env.V2_LISTEN_HOST||'127.0.0.1',basePath=process.env.V2_BASE_PATH||'',authMode=process.env.V2_AUTH_MODE||'local-review';
- const server=createV2Server({dataFile:process.env.V2_DATA_FILE,users,basePath,authMode,sessionSecret:process.env.SESSION_SECRET,publicOrigin:process.env.V2_PUBLIC_ORIGIN,classificationFile:process.env.V2_CLASSIFICATION_FILE,directoryFile:process.env.V2_AZURE_DIRECTORY_FILE,publicDirectory:process.env.V2_PUBLIC_DIRECTORY==='true'});
+ const server=createV2Server({dataFile:process.env.V2_DATA_FILE,users,basePath,authMode,sessionSecret:process.env.SESSION_SECRET,publicOrigin:process.env.V2_PUBLIC_ORIGIN,classificationFile:process.env.V2_CLASSIFICATION_FILE,directoryFile:process.env.V2_AZURE_DIRECTORY_FILE,publicDirectory:process.env.V2_PUBLIC_DIRECTORY==='true',staffingRequired:process.env.V2_STAFFING_REQUIRED==='true'});
  server.listen(port,host,()=>console.log(`Onboarding V2: http://${host}:${port}${basePath}/ (${authMode}; ${users.length} identidades configuradas)`));
 }

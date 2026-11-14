@@ -1,0 +1,5 @@
+# Opt-in: Stage 2 must use governed classifications, project scope and Azure identity links.
+services:
+  onboarding-v2:
+    environment:
+      V2_STAFFING_REQUIRED: 'true'
