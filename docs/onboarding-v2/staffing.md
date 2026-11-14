@@ -1,5 +1,8 @@
 # Integración de Etapa 2 con clasificaciones — contrato y controles
 
+## Estado de publicación
+La conexión se publicó y verificó; ver `staffing-publication.md` para release, pruebas, límites y configuración real pendiente. La existencia de código conectado no significa que haya frentes/participaciones o usuarios autorizados configurados.
+
 ## Alcance
 Conectar selección gobernada de frentes, proyecto, responsable desarrollador y revisor independiente al catálogo y la copia Azure. No incluye ranking/carga/capacidad, escritura Assigned To, creación de tareas Azure, ni alta automática de permisos. El listado público reducido de nombres/frentes no se amplía con información privada.
 

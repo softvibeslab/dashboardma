@@ -61,4 +61,4 @@ El modo de revisión local no debe publicarse ni considerarse autenticación cor
 - Detector visual: sin hallazgos mecánicos; no se afirma certificación WCAG ni pentest integral.
 
 ## Pendiente para siguientes etapas
-Autorizar coordinadores explícitos e importar la fuente sanitizada desde una sesión autorizada; conectar el catálogo como selector gobernado de la fase 2; consultar carga/capacidad real y construir recomendaciones explicables. La rama y el módulo ya se publicaron, con el directorio sanitizado montado read-only; ver `classifications-publication.md`. Los frentes y participaciones no modifican Assigned To ni crean tareas en Azure en esta entrega.
+Autorizar coordinadores explícitos e importar la fuente sanitizada desde una sesión autorizada; completar clasificaciones/participaciones reales; consultar carga/capacidad y construir recomendaciones explicables. El catálogo ya está conectado a los selectores gobernados de la Etapa 2: ver `staffing-publication.md`. La rama y el módulo están publicados, con el directorio sanitizado montado read-only. Los frentes y participaciones no modifican Assigned To ni crean tareas en Azure en esta entrega.
