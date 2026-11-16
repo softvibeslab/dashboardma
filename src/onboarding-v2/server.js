@@ -8,9 +8,11 @@ import {ClassificationStore} from './classifications.js';
 import {StaffingService} from './staffing.js';
 import {AzureIntake,azureIntakeFromEnv} from './azure-intake.js';
 import {importProposal} from './azure-proposal.js';
+import {HermesEnrichment,assertGeneration,applyEnrichment,failure} from './hermes-enrichment.js';
+import {brokerTransport} from './hermes-broker.js';
 import {initial,change,blockers,digest,objects,objectHash,currentDecision,packageFor} from './model.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/state.json'),users=[],basePath='',authMode='local-review',sessionSecret='',publicOrigin='',classificationFile,directoryFile='',researchDirectory='',publicDirectory=false,staffingRequired=false,azureIntake=new AzureIntake()}={}){
+export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/state.json'),users=[],basePath='',authMode='local-review',sessionSecret='',publicOrigin='',classificationFile,directoryFile='',researchDirectory='',publicDirectory=false,staffingRequired=false,azureIntake=new AzureIntake(),hermesEnrichment=new HermesEnrichment()}={}){
  const catalog=new ClassificationStore(classificationFile||path.join(path.dirname(dataFile),'classifications.json'),{directoryFile,researchDirectory});
  const staffing=new StaffingService(catalog,{directoryFile,identities:users});
  if(basePath&&!/^\/[a-zA-Z0-9/_-]+$/.test(basePath))throw Error('V2_BASE_PATH inválido.');
@@ -21,6 +23,10 @@ export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/stat
  const sessions=new Map();let queue=Promise.resolve();
  const loginUrl=`/dashboard/auth/login?returnTo=${encodeURIComponent(basePath||'/dashboard/onboarding-v2')}`;
  const read=async()=>{try{return JSON.parse(await readFile(dataFile,'utf8'));}catch(e){if(e.code==='ENOENT')return initial();throw e;}};
+ const running=new Set();
+ const persist=async state=>{await mkdir(path.dirname(dataFile),{recursive:true});const temp=dataFile+'.pending';await writeFile(temp,JSON.stringify(state,null,2),{mode:0o600});await rename(temp,dataFile);};
+ const serial=run=>{const work=queue.then(run);queue=work.catch(()=>{});return work;};
+ const executionView=e=>e?.status==='in-progress'&&!running.has(e.executionId)?{...e,status:'failed',code:'interrupted-no-retry'}:e;
  const send=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(data));};
  const body=async req=>{const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>1024*1024)throw Error('Solicitud demasiado grande.');chunks.push(chunk);}return JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');};
  const srv=http.createServer(async(req,res)=>{try{
@@ -66,7 +72,7 @@ export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/stat
      if(options.warning)pending[2].push(options.warning);
      try{staffing.assertCurrent(state.phases[2],options);}catch(e){pending[2].push(e.message);}
     }
-    return {state,actor,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,integrations:{ai:'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
+    return {state,actor,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,hermes:{configured:hermesEnrichment.configured(),execution:executionView(state.aiExecutions?.at(-1))||null},integrations:{ai:state.hermesEnrichments?.length?'real':'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
    };
    if(url.pathname==='/api/staffing'){
     if(req.method!=='GET')return send(res,405,{error:'Método no permitido.'});
@@ -101,6 +107,37 @@ export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/stat
     };
     const work=queue.then(run);queue=work.catch(()=>{});return send(res,200,await work);
    }
+   if(url.pathname==='/api/hermes/enrich'){
+    if(req.method!=='POST')return send(res,405,{error:'Método no permitido.'});
+    if(!actor.roles.some(r=>['editor','coordinator'].includes(r)))throw failure(403,'forbidden');
+    const input=await body(req);
+    if(Object.keys(input).some(k=>!['revision','executionId'].includes(k)))throw failure(400,'input-fields');
+    let launch;
+    const execution=await serial(async()=>{
+     const before=await read();
+     const existing=before.aiExecutions?.find(e=>e.executionId===input.executionId);
+     if(existing){if(existing.revision!==input.revision||existing.actor!==actor.id)throw failure(409,'idempotency-conflict');return executionView(existing);}
+     const source=assertGeneration(before,actor,input);
+     if(!hermesEnrichment.configured())throw failure(503,'not-configured');
+     if(running.size)throw failure(429,'busy');
+     if((before.aiExecutions?.length||0)>=100)throw failure(409,'execution-ledger-full');
+     const entry={executionId:input.executionId,actor:actor.id,revision:input.revision,sourceHash:source.sourceHash,model:hermesEnrichment.model,at:new Date().toISOString(),status:'in-progress'};
+     before.aiExecutions||=[];before.aiExecutions.push(entry);await persist(before);running.add(input.executionId);
+     launch=async()=>{
+      let result,error;
+      try{result=await hermesEnrichment.generate(before,actor,input);}catch(e){error=e;}
+      await serial(async()=>{
+       let current=await read();let record=current.aiExecutions.find(e=>e.executionId===input.executionId);
+       try{if(error)throw error;current=applyEnrichment(current,result,actor);record=current.aiExecutions.find(e=>e.executionId===input.executionId);Object.assign(record,{status:'real',inputHash:result.inputHash,outputHash:result.outputHash,version:current.revision});}
+       catch(e){Object.assign(record,{status:'failed',code:['stale-revision','source-integrity','timeout','invalid-output'].includes(e.code)?e.code:'generation-failed'});}
+       record.finishedAt=new Date().toISOString();await persist(current);
+      });
+     };
+     return entry;
+    });
+    if(launch)void launch().catch(()=>{}).finally(()=>running.delete(input.executionId));
+    return send(res,execution.status==='in-progress'?202:200,{execution});
+   }
    if(url.pathname==='/api/state'&&req.method==='GET')return send(res,200,await view());
    if(url.pathname==='/api/package'&&req.method==='GET'){
     const exportPackage=async snapshot=>{const state=await read();if(staffingRequired)staffing.assertCurrent(state.phases[2],await staffing.current(snapshot));const p=packageFor(state);res.setHeader('Content-Disposition','attachment; filename="onboarding-v2-package.json"');return send(res,200,p);};
@@ -127,13 +164,14 @@ export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/stat
   let text=await readFile(path.join(root,'public/onboarding-v2',name));
   if(name.endsWith('.html'))text=Buffer.from(text.toString().replace(/(href|src)="\/(styles\.css|app\.js|classifications(?:\.css|\.js)?|)"/g,(_,attr,asset)=>`${attr}="${basePath}/${asset}"`));
   res.writeHead(200,{'content-type':name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html; charset=utf-8','cache-control':'no-store'});res.end(text);
- }catch(e){const message=e.message||'Error';const status=e.status||(/versión|hash|bloque/.test(message)?409:/autentic|Rol |rol |asignad|responsable|destinatario/.test(message)?403:400);send(res,status,{error:message});}});
+ }catch(e){if((req.url||'').split('?')[0].endsWith('/api/hermes/enrich')&&!e.status)return send(res,503,{error:'Enriquecimiento Hermes no disponible; no se modificó el borrador.'});const message=e.message||'Error';const status=e.status||(/versión|hash|bloque/.test(message)?409:/autentic|Rol |rol |asignad|responsable|destinatario/.test(message)?403:400);send(res,status,{error:message});}});
  return srv;
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const configFile=process.env.V2_IDENTITY_ROLES_FILE||process.env.V2_REVIEW_USERS_FILE;
  const users=configFile?JSON.parse(await readFile(configFile,'utf8')):[];
+ const hermesEnrichment=new HermesEnrichment({model:process.env.V2_HERMES_MODEL||'',transport:brokerTransport({socketPath:process.env.V2_HERMES_BROKER_SOCKET||'',key:process.env.V2_HERMES_BROKER_KEY||'',approved:process.env.V2_HERMES_AUTHORIZED==='true'})});
  const port=Number(process.env.V2_PORT||4191),host=process.env.V2_LISTEN_HOST||'127.0.0.1',basePath=process.env.V2_BASE_PATH||'',authMode=process.env.V2_AUTH_MODE||'local-review';
- const server=createV2Server({dataFile:process.env.V2_DATA_FILE,users,basePath,authMode,sessionSecret:process.env.SESSION_SECRET,publicOrigin:process.env.V2_PUBLIC_ORIGIN,classificationFile:process.env.V2_CLASSIFICATION_FILE,directoryFile:process.env.V2_AZURE_DIRECTORY_FILE,researchDirectory:process.env.V2_CLASSIFICATION_RESEARCH_DIRECTORY,publicDirectory:process.env.V2_PUBLIC_DIRECTORY==='true',staffingRequired:process.env.V2_STAFFING_REQUIRED==='true',azureIntake:azureIntakeFromEnv()});
+ const server=createV2Server({hermesEnrichment,dataFile:process.env.V2_DATA_FILE,users,basePath,authMode,sessionSecret:process.env.SESSION_SECRET,publicOrigin:process.env.V2_PUBLIC_ORIGIN,classificationFile:process.env.V2_CLASSIFICATION_FILE,directoryFile:process.env.V2_AZURE_DIRECTORY_FILE,researchDirectory:process.env.V2_CLASSIFICATION_RESEARCH_DIRECTORY,publicDirectory:process.env.V2_PUBLIC_DIRECTORY==='true',staffingRequired:process.env.V2_STAFFING_REQUIRED==='true',azureIntake:azureIntakeFromEnv()});
  server.listen(port,host,()=>console.log(`Onboarding V2: http://${host}:${port}${basePath}/ (${authMode}; ${users.length} identidades configuradas)`));
 }

@@ -84,6 +84,12 @@ export function renderEditor(stage=phase,data=draft,currentView=view){const phas
  if(phase===5)html+=`<p class="notice">${draft.kind==='software'?'Resultados de software declarados por personas. Se exigen build, entorno, evidencia y revisor independiente; esta app no ejecuta el software ni inspecciona enlaces.':'Preparación documental: casos planificados y revisión de diseño. No equivale a QA software ejecutado.'}</p>`;
  return html+'</div>';
 }
+export function renderHermesEnrichment(currentView){
+ const h=currentView.hermes||{configured:false},run=h.execution;
+ const status=run?.status||(h.configured?'not-run':'not-configured');
+ const allowed=h.configured&&currentView.state.azureIntakes?.length&&currentView.actor.roles.some(r=>['editor','coordinator'].includes(r))&&status!=='in-progress';
+ return `<section class="collection"><h2>Enriquecimiento Hermes / IA</h2><p>Generación separada del importador documental. Propuesta sin aprobación automática; revisión humana obligatoria. No ejecuta QA ni escribe Azure.</p><p class="badge" id="hermesStatus">${esc(status)}</p><button id="enriquecerHermes" ${allowed?'':'disabled'}>Enriquecer con Hermes</button>${!h.configured?'<p class="notice">not-configured · falta un broker especializado autenticado y autorizado; no se llama a ningún proveedor.</p>':''}${run?`<p>${esc(run.model)} · ${esc(run.at)} · ${esc(run.executionId)} · ${esc(run.code||'')}</p><p class="hash">Fuente ${esc(run.sourceHash)}<br>Entrada ${esc(run.inputHash||'pendiente')}<br>Salida ${esc(run.outputHash||'pendiente')}</p>`:''}<p>Compara el original protegido en «Fuente Azure» con los campos editables de contexto y límites. Versiones e impacto conserva el antes/después. Las preguntas bloqueantes no son resueltas por la IA.</p></section>`;
+}
 export function renderAzureIntake(currentView){
  const enabled=currentView.integrations?.azureIntake&&currentView.actor.roles.some(r=>['editor','coordinator'].includes(r));
  const imports=currentView.state.azureIntakes||[];
@@ -92,7 +98,7 @@ export function renderAzureIntake(currentView){
 function assigned(object){return object==='spec'?view.state.phases[4].reviewer:object==='tests'?view.state.phases[5].reviewer:view.state.phases[2].fronts.find(f=>`front:${f.id}`===object)?.reviewer;}
 function applyPermissions(){
  const actor=view.actor,editor=actor.roles.includes('editor');
- if(!editor){document.querySelectorAll('#editor input,#editor select,#editor textarea,#editor button').forEach(e=>{if(!e.hasAttribute('data-name-search')&&!e.hasAttribute('data-clear-search'))e.disabled=true;});if($('saveState'))$('saveState').textContent='Solo lectura · se requiere rol editor para modificar';}
+ if(!editor||busy||view.hermes?.execution?.status==='in-progress'){document.querySelectorAll('#editor input,#editor select,#editor textarea,#editor button').forEach(e=>{if(busy||view.hermes?.execution?.status==='in-progress'||(!e.hasAttribute('data-name-search')&&!e.hasAttribute('data-clear-search')))e.disabled=true;});if($('saveState'))$('saveState').textContent='Solo lectura · se requiere rol editor para modificar';}
  document.querySelectorAll('[data-confirm]').forEach(b=>b.disabled=!canConfirmFront(actor,view.state.phases[2].fronts.find(f=>f.id===b.dataset.confirm),view.staffing,view.state.phases[2]));
  if($('review'))$('review').disabled=actor.id!==draft.reviewer||!actor.roles.includes(phase===4?'reviewer':'qa');
  document.querySelectorAll('[data-decision]').forEach(b=>{const o=view.objects[Number(b.dataset.decision.split(':')[0])];b.disabled=!canDecideObject(actor,o.object,view.state.phases,view.staffing);});
@@ -106,7 +112,7 @@ function render(){
  const s=view.state;draft=structuredClone(s.phases[phase]);$('stageStatus').textContent=`${phase} / 7 · ${titles[phase]}`;$('ownerStatus').textContent=`Responsable de fase: ${phase===4?s.phases[4].reviewer||'sin asignar':phase===5?s.phases[5].reviewer||'sin asignar':phase===6?'revisores asignados por objeto':phase===7?s.phases[7].recipient||'sin asignar':s.phases[1].owner||'sin asignar'}`;$('revisionStatus').textContent=`Versión ${s.revision} · ${view.hash.slice(0,12)}`;
  $('steps').innerHTML=titles.slice(1).map((t,i)=>`<li><button data-phase="${i+1}" ${phase===i+1?'aria-current="step"':''}><span class="number">${i+1}</span><span>${esc(t)}</span><small>${view.blockers[i+1].length?`${view.blockers[i+1].length} pendientes`:'Preparado'}</small></button></li>`).join('');
  const pending=view.blockers[phase];const cross=[1,2,3,4,5,6,7].flatMap(p=>view.blockers[p].map(t=>({p,t})));
- $('phase').innerHTML=`<h1>${titles[phase]}</h1><p>${purpose[phase]}</p>${phase===1?renderAzureIntake(view):''}${phase===6?approvals():renderEditor()}${pending.length?`<section class="blockers"><strong>Qué falta en esta fase</strong><ul>${pending.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></section>`:'<p class="ready">Requisitos de esta fase completos según las reglas del servidor.</p>'}${phase===3?comments():''}${phase===7?`<h2>Paquete y recepción</h2><p class="muted">El paquete incluye specs, contratos, dependencias, pruebas, decisiones, aprobaciones y límites. Las decisiones locales se identifican como local-review.</p><div class="actions"><button class="primary" id="download" ${cross.length?'disabled':''}>Descargar paquete estructurado</button><button id="receipt" ${cross.length?'disabled':''}>Confirmar recepción del paquete vigente</button></div>${cross.length?`<div class="blockers"><strong>Entrega bloqueada</strong><ul>${cross.map(x=>`<li><a href="#phase" data-goto="${x.p}">Fase ${x.p}</a>: ${esc(x.t)}</li>`).join('')}</ul></div>`:''}<details><summary>Historial de recepción</summary><pre>${esc(pretty(s.receipts))}</pre></details>`:''}${versions()}<div class="actions"><button id="back" ${phase===1?'disabled':''}>Fase anterior</button><button id="next" ${phase===7?'disabled':''}>Siguiente fase</button></div>`;
+ $('phase').innerHTML=`<h1>${titles[phase]}</h1><p>${purpose[phase]}</p>${phase===1?renderAzureIntake(view)+renderHermesEnrichment(view):''}${phase===6?approvals():renderEditor()}${pending.length?`<section class="blockers"><strong>Qué falta en esta fase</strong><ul>${pending.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></section>`:'<p class="ready">Requisitos de esta fase completos según las reglas del servidor.</p>'}${phase===3?comments():''}${phase===7?`<h2>Paquete y recepción</h2><p class="muted">El paquete incluye specs, contratos, dependencias, pruebas, decisiones, aprobaciones y límites. Las decisiones locales se identifican como local-review.</p><div class="actions"><button class="primary" id="download" ${cross.length?'disabled':''}>Descargar paquete estructurado</button><button id="receipt" ${cross.length?'disabled':''}>Confirmar recepción del paquete vigente</button></div>${cross.length?`<div class="blockers"><strong>Entrega bloqueada</strong><ul>${cross.map(x=>`<li><a href="#phase" data-goto="${x.p}">Fase ${x.p}</a>: ${esc(x.t)}</li>`).join('')}</ul></div>`:''}<details><summary>Historial de recepción</summary><pre>${esc(pretty(s.receipts))}</pre></details>`:''}${versions()}<div class="actions"><button id="back" ${phase===1?'disabled':''}>Fase anterior</button><button id="next" ${phase===7?'disabled':''}>Siguiente fase</button></div>`;
  bind();applyPermissions();
 }
 function move(p){if(dirty&&!confirm('Hay cambios sin guardar. ¿Descartarlos y cambiar de fase?'))return;phase=p;sessionStorage.setItem('v2-phase',String(p));dirty=false;render();$('phase').focus();}
@@ -138,6 +144,25 @@ function bind(){
   }catch(error){results.textContent=error.message;}finally{busy=false;if($('azureSearch'))$('azureSearch').disabled=!view.integrations?.azureIntake||!view.actor.roles.some(r=>['editor','coordinator'].includes(r));}
  };
 
+ if($('enriquecerHermes'))$('enriquecerHermes').onclick=async()=>{
+  if(busy)return;
+  if(dirty){message('Guarda o descarta los cambios locales antes de enriquecer.',true);return;}
+  if(!confirm('¿Crear una nueva propuesta Hermes sobre la fuente importada? Se conserva el borrador anterior, se invalidan aprobaciones dependientes y no se publica en Azure.'))return;
+  busy=true;$('enriquecerHermes').disabled=true;
+  const key='v2-hermes-pending';
+  try{
+   let input;try{input=JSON.parse(sessionStorage.getItem(key)||'null');}catch{}
+   if(!input||input.revision!==view.state.revision){input={revision:view.state.revision,executionId:crypto.randomUUID()};sessionStorage.setItem(key,JSON.stringify(input));}
+   await api('/api/hermes/enrich',input);
+   // Poll state only; never retry generation after a network error automatically.
+   for(let n=0;n<100;n++){
+    view=await api('/api/state');render();
+    if(view.hermes?.execution?.status!=='in-progress'){sessionStorage.removeItem(key);message(view.hermes?.execution?.status==='real'?'Propuesta IA versionada; revisión humana pendiente.':'Generación fallida; borrador sin cambios.',view.hermes?.execution?.status!=='real');break;}
+    await new Promise(r=>setTimeout(r,600));
+   }
+  }catch(e){message(e.message+' Recarga para consultar el estado; no se reintenta automáticamente.',true);}
+  finally{busy=false;render();}
+ };
  if($('azureImportForm'))$('azureImportForm').onsubmit=async e=>{
   e.preventDefault();if(busy)return;
   if(dirty){message('Guarda o descarta los cambios locales antes de importar.',true);return;}
