@@ -6,9 +6,11 @@ import {randomBytes,timingSafeEqual} from 'node:crypto';
 import {getSession} from '../auth.js';
 import {ClassificationStore} from './classifications.js';
 import {StaffingService} from './staffing.js';
+import {AzureIntake} from './azure-intake.js';
+import {importProposal} from './azure-proposal.js';
 import {initial,change,blockers,digest,objects,objectHash,currentDecision,packageFor} from './model.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/state.json'),users=[],basePath='',authMode='local-review',sessionSecret='',publicOrigin='',classificationFile,directoryFile='',publicDirectory=false,staffingRequired=false}={}){
+export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/state.json'),users=[],basePath='',authMode='local-review',sessionSecret='',publicOrigin='',classificationFile,directoryFile='',publicDirectory=false,staffingRequired=false,azureIntake=new AzureIntake()}={}){
  const catalog=new ClassificationStore(classificationFile||path.join(path.dirname(dataFile),'classifications.json'),{directoryFile});
  const staffing=new StaffingService(catalog,{directoryFile,identities:users});
  if(basePath&&!/^\/[a-zA-Z0-9/_-]+$/.test(basePath))throw Error('V2_BASE_PATH inválido.');
@@ -64,7 +66,7 @@ export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/stat
      if(options.warning)pending[2].push(options.warning);
      try{staffing.assertCurrent(state.phases[2],options);}catch(e){pending[2].push(e.message);}
     }
-    return {state,actor,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,integrations:{ai:'not-run',azure:staffingRequired?'snapshot-classification-candidates':'not-connected',repositories:'not-read'}};
+    return {state,actor,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,integrations:{ai:'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
    };
    if(url.pathname==='/api/staffing'){
     if(req.method!=='GET')return send(res,405,{error:'Método no permitido.'});
@@ -74,6 +76,21 @@ export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/stat
     if(req.method==='GET')return send(res,200,{catalog:await catalog.view(),canManage:actor.roles.includes('coordinator'),sourceConfigured:Boolean(directoryFile),actor:{id:actor.id,mode:actor.mode}});
     if(req.method==='POST')return send(res,200,{catalog:await catalog.act(await body(req),actor),canManage:true,sourceConfigured:Boolean(directoryFile),actor:{id:actor.id,mode:actor.mode}});
     return send(res,405,{error:'Método no permitido.'});
+   }
+   if(url.pathname==='/api/azure/import'){
+    if(req.method!=='POST')return send(res,405,{error:'Método no permitido.'});
+    if(!actor.roles.some(r=>['editor','coordinator'].includes(r)))return send(res,403,{error:'Rol editor o coordinator requerido.'});
+    const input=await body(req);
+    if(!Number.isSafeInteger(input.id)||input.id<=0)return send(res,400,{error:'ID Azure inválido.'});
+    const run=async()=>{
+     const before=await read();
+     if(input.revision!==before.revision)throw Object.assign(Error('Conflicto de versión: recarga antes de importar.'),{status:409});
+     if(Object.keys(before.phases[1]).length&&input.confirmReplace!==true)throw Object.assign(Error('Confirma reemplazar el borrador; se preserva la versión anterior.'),{status:409});
+     const snapshot=await azureIntake.read(input.id);
+     const next=importProposal(before,snapshot,actor,input);
+     await mkdir(path.dirname(dataFile),{recursive:true});const temp=dataFile+'.pending';await writeFile(temp,JSON.stringify(next,null,2),{mode:0o600});await rename(temp,dataFile);return view();
+    };
+    const work=queue.then(run);queue=work.catch(()=>{});return send(res,200,await work);
    }
    if(url.pathname==='/api/state'&&req.method==='GET')return send(res,200,await view());
    if(url.pathname==='/api/package'&&req.method==='GET'){
@@ -108,6 +125,6 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
  const configFile=process.env.V2_IDENTITY_ROLES_FILE||process.env.V2_REVIEW_USERS_FILE;
  const users=configFile?JSON.parse(await readFile(configFile,'utf8')):[];
  const port=Number(process.env.V2_PORT||4191),host=process.env.V2_LISTEN_HOST||'127.0.0.1',basePath=process.env.V2_BASE_PATH||'',authMode=process.env.V2_AUTH_MODE||'local-review';
- const server=createV2Server({dataFile:process.env.V2_DATA_FILE,users,basePath,authMode,sessionSecret:process.env.SESSION_SECRET,publicOrigin:process.env.V2_PUBLIC_ORIGIN,classificationFile:process.env.V2_CLASSIFICATION_FILE,directoryFile:process.env.V2_AZURE_DIRECTORY_FILE,publicDirectory:process.env.V2_PUBLIC_DIRECTORY==='true',staffingRequired:process.env.V2_STAFFING_REQUIRED==='true'});
+ const server=createV2Server({dataFile:process.env.V2_DATA_FILE,users,basePath,authMode,sessionSecret:process.env.SESSION_SECRET,publicOrigin:process.env.V2_PUBLIC_ORIGIN,classificationFile:process.env.V2_CLASSIFICATION_FILE,directoryFile:process.env.V2_AZURE_DIRECTORY_FILE,publicDirectory:process.env.V2_PUBLIC_DIRECTORY==='true',staffingRequired:process.env.V2_STAFFING_REQUIRED==='true',azureIntake:new AzureIntake({token:process.env.V2_AZURE_PAT||'',allowedIds:(process.env.V2_AZURE_ALLOWED_IDS||'').split(',').filter(x=>/^[1-9]\d*$/.test(x)).map(Number)})});
  server.listen(port,host,()=>console.log(`Onboarding V2: http://${host}:${port}${basePath}/ (${authMode}; ${users.length} identidades configuradas)`));
 }

@@ -1,0 +1,6 @@
+# Optional fifth compose file. Keep the four existing V2 files and the data volume.
+# Private file contains V2_AZURE_PAT and V2_AZURE_ALLOWED_IDS; never commit it.
+services:
+  onboarding-v2:
+    env_file:
+      - ${V2_AZURE_INTAKE_ENV_FILE:?Point to a private Azure read-only intake env file}
