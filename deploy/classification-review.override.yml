@@ -1,0 +1,13 @@
+# REVIEW CANDIDATE ONLY: add to existing base + classifications + public-directory
+# + staffing + azure-intake overlays. Does not import or grant access.
+services:
+  onboarding-v2:
+    environment:
+      V2_CLASSIFICATION_RESEARCH_DIRECTORY: /run/v2/classification-research
+    volumes:
+      - type: bind
+        source: ${V2_CLASSIFICATION_RESEARCH_HOST:?Set an absolute private directory outside the repository}
+        target: /run/v2/classification-research
+        read_only: true
+        bind:
+          create_host_path: false

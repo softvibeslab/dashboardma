@@ -18,7 +18,24 @@
 <p id="accessHelp" hidden><a href="/">Iniciar sesión desde el onboarding</a> para administrar clasificaciones. La consulta pública no requiere acceso V2.</p>
 <div id="catalogWorkspace" hidden>
 <div class="catalog-toolbar"><span id="catalogRevision"></span><button id="catalogReload">Recargar catálogo</button><span id="readOnly" hidden>Solo lectura. Un coordinador administra los registros.</span></div>
-<nav class="catalog-nav" aria-label="Secciones del catálogo"><a href="#frontSection">Frentes</a><a href="#peopleSection">Participación de personas</a><a href="#historySection">Historial</a></nav>
+<nav class="catalog-nav" aria-label="Secciones del catálogo"><a href="#reviewSection">Propuestas privadas · Etapa 2</a><a href="#frontSection">Frentes</a><a href="#peopleSection">Participación de personas</a><a href="#historySection">Historial</a></nav>
+<section id="reviewSection" aria-labelledby="reviewHeading">
+<div class="section-heading"><div><h2 id="reviewHeading">Propuestas privadas de clasificación · Etapa 2</h2><p>Revisa la evidencia histórica antes de confirmar. Importar o consultar no habilita participaciones, no mide productividad ni demuestra disponibilidad.</p></div><button id="importResearch">Importar lote privado del servidor</button></div>
+<p id="researchSource" class="muted"></p>
+<div class="catalog-filters" role="search" aria-label="Filtrar propuestas privadas"><label>Buscar persona<input id="reviewQuery" type="search" placeholder="Nombre de la copia V2"></label><label>Frente propuesto<select id="reviewFrontFilter"></select></label><label>Confianza<select id="reviewConfidence"><option value="">Todas</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja · no confirmable</option><option value="insuficiente">Insuficiente</option></select></label><label>Estado<select id="reviewStatus"><option value="pending">Pendiente</option><option value="">Todos</option><option value="accepted">Aceptada</option><option value="corrected">Corregida</option><option value="rejected">Rechazada</option></select></label><label>Lote / periodo<select id="reviewBatch"></select></label></div>
+<p id="reviewCount" role="status" aria-live="polite"></p>
+<form id="reviewForm" class="catalog-editor" hidden>
+<h3 id="reviewFormTitle">Revisar propuesta exacta</h3><p id="reviewExact" class="muted"></p>
+<label>Decisión<select id="reviewOutcome" required><option value="">Selecciona una decisión</option><option value="accept">Aceptar frente propuesto</option><option value="correct">Corregir frente</option><option value="reject">Rechazar propuesta</option></select></label>
+<label>Motivo de la decisión<textarea id="reviewReason" required maxlength="2000" rows="3"></textarea></label>
+<fieldset id="reviewParticipation"><legend>Confirmación explícita de participación</legend><p>No hay selección automática. Los proyectos proceden de la copia actual autorizada; la evidencia histórica no concede autorización.</p><div class="fields"><label>Frente actual<select id="reviewFront" required></select></label><label>Nivel<select id="reviewLevel" required><option value="">Selecciona nivel</option><option value="principal">Principal</option><option value="secondary">Secundario</option></select></label><label>Habilitación para nuevas asignaciones<select id="reviewEnabled" required><option value="">Decide explícitamente</option><option value="false">No habilitar</option><option value="true">Habilitar (no acredita disponibilidad)</option></select></label></div>
+<fieldset><legend>Participación validada por coordinador</legend><div class="checkboxes"><label class="check"><input name="reviewRole" type="checkbox" value="developer">Desarrollador</label><label class="check"><input name="reviewRole" type="checkbox" value="reviewer">Revisor</label><label class="check"><input name="reviewRole" type="checkbox" value="support">Apoyo</label></div></fieldset>
+<fieldset><legend>Proyectos de la copia V2 actual</legend><div id="reviewProjects" class="checkboxes"></div></fieldset></fieldset>
+<p>Guardar aplica la decisión exacta y, solo al aceptar o corregir, crea la participación validada en la misma transacción del catálogo. No cambia roles, permisos ni Azure.</p>
+<div class="actions"><button type="submit" class="primary">Guardar decisión revisada</button><button id="cancelReview" type="button">Cancelar revisión</button></div>
+</form>
+<div id="reviewList" class="table-wrap"></div>
+</section>
 <section id="frontSection" aria-labelledby="frontHeading">
 <div class="section-heading"><div><h2 id="frontHeading">Frentes de trabajo</h2><p>Una especialidad, no un área de negocio. Desactiva un frente para conservar sus relaciones.</p></div><button id="newFront" class="primary">Crear frente</button></div>
 <form id="frontForm" class="catalog-editor" hidden>

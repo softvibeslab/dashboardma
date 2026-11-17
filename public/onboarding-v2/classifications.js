@@ -1,3 +1,4 @@
+import {renderReview} from './classification-review.js';
 const $=id=>document.getElementById(id);
 const base=new URL('.',import.meta.url).pathname.replace(/\/$/,'');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -25,7 +26,7 @@ function render(){
  if(!view.sourceConfigured)$('directoryStatus').textContent+=' Fuente del servidor pendiente de configuración.';
  $('frontList').innerHTML=s.fronts.length?`<table><caption class="sr-only">Catálogo de frentes</caption><thead><tr><th scope="col">Frente</th><th scope="col">Estado</th><th scope="col">Acciones</th></tr></thead><tbody>${s.fronts.map(f=>`<tr><td><strong>${esc(f.name)}</strong><small>${esc(f.description)}</small></td><td>${f.active?'Activo':'Inactivo'}</td><td>${view.canManage?`<div class="row-actions"><button data-front-edit="${esc(f.id)}">Editar</button><button class="danger" data-front-delete="${esc(f.id)}">Eliminar</button></div>`:'Solo lectura'}</td></tr>`).join('')}</tbody></table>`:'<p class="empty">Aún no hay frentes. Crea uno, por ejemplo Android, Backend o QA, antes de asignar personas.</p>';
  options('filterFront',s.fronts);options('filterProject',[...new Set(s.directory.users.flatMap(u=>u.projects))].sort().map(p=>({id:p,name:p})));
- renderParticipations();
+ renderParticipations();renderReview(view,action,discard);
  const audit=s.audit.slice(-50).reverse();
  $('catalogHistory').innerHTML=`<p class="muted">${s.audit.length} cambios registrados. Se muestran los últimos ${audit.length}.</p>`+audit.map(a=>`<details><summary>${esc(a.type)} · ${esc(a.actor)} · ${esc(a.at)} · v${a.revision}</summary><h3>Antes</h3><pre>${esc(JSON.stringify(a.before,null,2))}</pre><h3>Después</h3><pre>${esc(JSON.stringify(a.after,null,2))}</pre></details>`).join('');
  $('frontList').querySelectorAll('[data-front-edit]').forEach(b=>b.onclick=()=>openFront(s.fronts.find(f=>f.id===b.dataset.frontEdit)));
@@ -75,7 +76,7 @@ $('participationForm').onsubmit=e=>{e.preventDefault();const id=$('participation
 $('participationUser').onchange=()=>projects();
 $('newFront').onclick=()=>openFront();$('newParticipation').onclick=()=>openParticipation();
 for(const id of ['cancelFront','cancelParticipation'])$(id).onclick=()=>{if(discard())closeForms();};
-for(const form of ['frontForm','participationForm'])$(form).addEventListener('input',()=>{dirty=true;});
+for(const form of ['frontForm','participationForm','reviewForm'])$(form).addEventListener('input',()=>{dirty=true;});
 for(const id of ['filterQuery','filterFront','filterProject','filterRole','filterEnabled'])$(id).addEventListener('input',renderParticipations);
 $('syncDirectory').onclick=()=>{if(discard())action('directory.sync');};
 $('catalogReload').onclick=async()=>{if(!discard())return;try{view=await request();closeForms();render();notice('Catálogo actualizado desde el servidor.');}catch(e){notice(e.message,true);}};

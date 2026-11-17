@@ -8,3 +8,7 @@
 !public/
 !public/onboarding-v2/
 !public/onboarding-v2/**
+# Never send private research into the image build, even under an allowed tree.
+**/classification-proposals.json
+**/evidence.json
+**/classification-research/**

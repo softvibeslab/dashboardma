@@ -15,5 +15,9 @@ node_modules/
 __pycache__/
 *.py[cod]
 *.log
+# Private classification research: never version inputs, even if copied accidentally
+classification-proposals.json
+evidence.json
+classification-research/
 coverage/
 .DS_Store

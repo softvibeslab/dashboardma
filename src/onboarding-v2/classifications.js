@@ -1,6 +1,7 @@
-import {readFile,writeFile,mkdir,rename} from 'node:fs/promises';
-import {dirname} from 'node:path';
+import {readFile,writeFile,mkdir,rename,open,unlink} from 'node:fs/promises';
+import {dirname,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {importResearch} from './classification-review.js';
 
 export class CatalogError extends Error {
  constructor(message,status=400){super(message);this.status=status;}
@@ -25,8 +26,11 @@ export function projectAzureDirectory(snapshot){
  }
  return {source:'azure-devops-snapshot',syncedAt,users:[...byId.values()]};
 }
+const queues=new Map();
 export class ClassificationStore {
- constructor(file,{directoryFile=''}={}){this.file=file;this.directoryFile=directoryFile;this.queue=Promise.resolve();}
+ constructor(file,{directoryFile='',researchDirectory=''}={}){this.file=resolve(file);this.directoryFile=directoryFile;this.researchDirectory=researchDirectory;}
+ get queue(){return queues.get(this.file)||Promise.resolve();}
+ set queue(value){queues.set(this.file,value);}
  async view(){try{return JSON.parse(await readFile(this.file,'utf8'));}catch(e){if(e.code==='ENOENT')return empty();throw e;}}
  async publicView(){
   if(!this.directoryFile)fail('Listado público pendiente de configuración de la fuente Azure.',503);
@@ -42,19 +46,51 @@ export class ClassificationStore {
   }).sort((a,b)=>a.name.localeCompare(b.name,'es'));
   return {source:'azure-devops-snapshot',syncedAt:source.syncedAt,users};
  }
+ async exclusive(callback){
+  await mkdir(dirname(this.file),{recursive:true});let lock;
+  try{lock=await open(this.file+'.lock','wx',0o600);}catch(e){if(e.code==='EEXIST')fail('Catálogo bloqueado por otro escritor; solicita revisión al operador.',503);throw e;}
+  try{return await callback();}finally{await lock.close();await unlink(this.file+'.lock');}
+ }
  async withSnapshot(callback){
-  const work=this.queue.then(async()=>callback(await this.view()));
+  const work=this.queue.then(()=>this.exclusive(async()=>callback(await this.view())));
   this.queue=work.catch(()=>{});return work;
  }
  async act(action,actor){
   if(!actor?.authenticated||!actor.roles?.includes('coordinator'))fail('Rol coordinator requerido para administrar clasificaciones.',403);
   only(action,['type','revision','id','data']);
-  const work=this.queue.then(async()=>{
-   const s=await this.view();
+  return this.withSnapshot(async s=>{
    if(action.revision!==s.revision)fail('Conflicto de revisión: recarga antes de guardar.',409);
-   const now=new Date().toISOString();const data=action.data;
-   let recordId=action.id,before=null,after=null;
-   if(action.type==='directory.sync'){
+   const now=new Date().toISOString();let data=action.data;
+   let recordId=action.id,before=null,after=null,reviewRecord=null,decision=null;
+   if(action.type==='review.decide'){
+    only(data,['outcome','reason','batchHash','participation']);
+    reviewRecord=s.review?.proposals.find(p=>p.id===action.id);
+    if(!reviewRecord)fail('Propuesta no encontrada.',404);
+    if(reviewRecord.status!=='pending')fail('Propuesta ya decidida; conserva su historial.',409);
+    if(data.batchHash!==reviewRecord.batchHash)fail('Versión exacta de propuesta requerida.',409);
+    const reason=text(data.reason);if(!reason)fail('Motivo de revisión obligatorio.');
+    if(!['accept','correct','reject'].includes(data.outcome))fail('Decisión inválida.');
+    decision={outcome:data.outcome,reason,batchHash:reviewRecord.batchHash,actor:actor.id,at:now,revision:s.revision+1};
+    if(data.outcome==='reject'){
+     if(data.participation!==undefined)fail('Rechazar no crea participación.');
+    }else{
+     if(!['alta','media'].includes(reviewRecord.confidence)||!reviewRecord.evidence.length||reviewRecord.evidence.some(e=>!e.available))fail('Evidencia insuficiente: mantener pendiente o rechazar.');
+     only(data.participation,['frontId','level','roles','projects','enabled']);
+     const front=s.fronts.find(f=>f.id===data.participation.frontId&&f.active);
+     if(!front)fail('Selecciona un frente actual activo.');
+     if(data.outcome==='accept'&&front.name!==reviewRecord.frontName)fail('El frente cambió; usa corregir explícitamente.');
+     let current;try{current=JSON.parse(await readFile(this.directoryFile,'utf8'));}catch{fail('Copia actual de identidades no disponible.',503);}
+     const user=current.users?.find(u=>u.id===reviewRecord.userId);
+     if(current.source!=='azure-devops-snapshot'||current.syncedAt!==s.directory.syncedAt)fail('Copia actual cambió: sincroniza y revisa de nuevo.',409);
+     if(!user||!Array.isArray(user.projects)||!Array.isArray(data.participation.projects)||data.participation.projects.some(p=>!user.projects.includes(p)))fail('Identidad o proyectos ausentes de la copia actual; mantener pendiente.');
+     data={...data.participation,userId:reviewRecord.userId};
+    }
+   }
+   if(action.type==='review.import'){
+    if(action.data!==undefined||action.id!==undefined)fail('El cliente no puede suministrar investigación.');
+    if(!await importResearch(s,this.researchDirectory,actor,now))return s;
+    recordId=s.review.batches.at(-1).hash;after={batch:s.review.batches.at(-1)};
+   }else if(action.type==='directory.sync'){
     if(action.data!==undefined)fail('El cliente no puede suministrar identidades para sincronización.');
     if(!this.directoryFile)fail('Fuente Azure no configurada. Solicita al operador la copia sincronizada.',503);
     let source;try{const raw=await readFile(this.directoryFile,'utf8');if(raw.length>8*1024*1024)fail('Directorio demasiado grande.');source=JSON.parse(raw);}catch(e){if(e instanceof CatalogError)throw e;fail('No se pudo leer la fuente Azure configurada.',503);}
@@ -68,7 +104,9 @@ export class ClassificationStore {
     before={source:s.directory.source,syncedAt:s.directory.syncedAt,count:s.directory.users.length};
     s.directory={source:source.source,syncedAt:source.syncedAt,importedAt:now,users};
     after={source:source.source,syncedAt:source.syncedAt,count:users.length};
-   }else if(action.type==='participation.create'||action.type==='participation.update'){
+   }else if(decision?.outcome==='reject'){
+    before={status:reviewRecord.status};after={status:'rejected'};
+   }else if(action.type==='participation.create'||action.type==='participation.update'||decision){
     only(data,['userId','frontId','level','roles','projects','enabled','notes']);
     const previous=action.type==='participation.update'?s.participations.find(p=>p.id===action.id):null;
     if(action.type==='participation.update'&&!previous)fail('Participación no encontrada.',404);
@@ -105,11 +143,16 @@ export class ClassificationStore {
     if(s.participations.some(p=>p.frontId===action.id))fail('El frente tiene participaciones; desactívalo o retira sus relaciones antes de eliminar.',409);
     before=s.fronts[i];s.fronts.splice(i,1);
    }else fail('Acción de catálogo no disponible.');
+   if(decision){
+    if(decision.outcome!=='reject'){decision.participationId=after.id;decision.participation=structuredClone(after);}
+    reviewRecord.status={accept:'accepted',correct:'corrected',reject:'rejected'}[decision.outcome];
+    reviewRecord.history.push(decision);recordId=reviewRecord.id;
+    after={decision,participation:decision.participation||null};
+   }
    s.revision++;
    s.audit.push({id:randomUUID(),type:action.type,recordId,actor:actor.id,at:now,revision:s.revision,before,after});
    await mkdir(dirname(this.file),{recursive:true});const tmp=this.file+'.'+randomUUID()+'.pending';
    await writeFile(tmp,JSON.stringify(s,null,2),{mode:0o600});await rename(tmp,this.file);return s;
   });
-  this.queue=work.catch(()=>{});return work;
  }
 }
