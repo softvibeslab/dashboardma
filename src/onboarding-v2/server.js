@@ -6,7 +6,7 @@ import {randomBytes,timingSafeEqual} from 'node:crypto';
 import {getSession} from '../auth.js';
 import {ClassificationStore} from './classifications.js';
 import {StaffingService} from './staffing.js';
-import {AzureIntake} from './azure-intake.js';
+import {AzureIntake,azureIntakeFromEnv} from './azure-intake.js';
 import {importProposal} from './azure-proposal.js';
 import {initial,change,blockers,digest,objects,objectHash,currentDecision,packageFor} from './model.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
@@ -134,6 +134,6 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
  const configFile=process.env.V2_IDENTITY_ROLES_FILE||process.env.V2_REVIEW_USERS_FILE;
  const users=configFile?JSON.parse(await readFile(configFile,'utf8')):[];
  const port=Number(process.env.V2_PORT||4191),host=process.env.V2_LISTEN_HOST||'127.0.0.1',basePath=process.env.V2_BASE_PATH||'',authMode=process.env.V2_AUTH_MODE||'local-review';
- const server=createV2Server({dataFile:process.env.V2_DATA_FILE,users,basePath,authMode,sessionSecret:process.env.SESSION_SECRET,publicOrigin:process.env.V2_PUBLIC_ORIGIN,classificationFile:process.env.V2_CLASSIFICATION_FILE,directoryFile:process.env.V2_AZURE_DIRECTORY_FILE,researchDirectory:process.env.V2_CLASSIFICATION_RESEARCH_DIRECTORY,publicDirectory:process.env.V2_PUBLIC_DIRECTORY==='true',staffingRequired:process.env.V2_STAFFING_REQUIRED==='true',azureIntake:new AzureIntake({token:process.env.V2_AZURE_PAT||'',allowedIds:(process.env.V2_AZURE_ALLOWED_IDS||'').split(',').filter(x=>/^[1-9]\d*$/.test(x)).map(Number)})});
+ const server=createV2Server({dataFile:process.env.V2_DATA_FILE,users,basePath,authMode,sessionSecret:process.env.SESSION_SECRET,publicOrigin:process.env.V2_PUBLIC_ORIGIN,classificationFile:process.env.V2_CLASSIFICATION_FILE,directoryFile:process.env.V2_AZURE_DIRECTORY_FILE,researchDirectory:process.env.V2_CLASSIFICATION_RESEARCH_DIRECTORY,publicDirectory:process.env.V2_PUBLIC_DIRECTORY==='true',staffingRequired:process.env.V2_STAFFING_REQUIRED==='true',azureIntake:azureIntakeFromEnv()});
  server.listen(port,host,()=>console.log(`Onboarding V2: http://${host}:${port}${basePath}/ (${authMode}; ${users.length} identidades configuradas)`));
 }

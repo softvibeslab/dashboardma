@@ -1,5 +1,5 @@
-# Optional fifth compose file. Keep the four existing V2 files and the data volume.
-# Private file contains V2_AZURE_PAT and V2_AZURE_ALLOWED_IDS; never commit it.
+# Intake overlay; preserve all six active V2 compose layers and the data volume.
+# Private env: V2_AZURE_PAT plus explicit project policy or ID allowlist; never commit it.
 services:
   onboarding-v2:
     env_file:

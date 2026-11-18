@@ -25,7 +25,7 @@ test('Etapa1 browser with real backend: import, provenance, human edit, confirm 
  const el=id=>document.getElementById(id),q=s=>document.querySelector(s),pause=()=>new Promise(r=>setTimeout(r,30)),check=(v,m)=>{if(!v)throw Error(m);};
  const wait=async fn=>{for(let i=0;i<180;i++){if(fn())return;await pause();}throw Error('Timeout: '+el('message').textContent);};
  el('token').value='synthetic-browser-editor';el('loginForm').requestSubmit();await wait(()=>!el('workspace').hidden);
- el('azureId').value='17';el('azureImportForm').requestSubmit();await wait(()=>el('revisionStatus').textContent.includes('Versión 1'));
+ window.confirm=()=>true;el('azureId').value='17';el('azureImportForm').requestSubmit();await wait(()=>el('revisionStatus').textContent.includes('Versión 1'));
  check(q('[data-path="title"]').value==='Synthetic Azure title','Imported title');check(el('phase').textContent.includes('all-fields-preserved'),'Full fields visible');check(el('phase').textContent.includes('IA no ejecutada'),'Honest generation');check(!q('#phase img'),'Source must not render as HTML');
  const data=await(await fetch('${base}/api/state')).json();check(data.state.azureIntakes[0].snapshot.root.comments.items[0].version===2,'Comment provenance');
  const input=q('[data-path="context"]');input.value='Human edited proposal';input.dispatchEvent(new Event('input',{bubbles:true}));el('editor').requestSubmit();await wait(()=>el('revisionStatus').textContent.includes('Versión 2'));

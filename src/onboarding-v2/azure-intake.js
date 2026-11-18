@@ -3,9 +3,13 @@ const ORG='https://dev.azure.com/MobileappsAmerica';
 const PROJECT='agileNestCorp';
 const fail=(status,message)=>Object.assign(new Error(message),{status});
 const now=()=>new Date().toISOString();
+export function azureIntakeFromEnv(env=process.env){
+ return new AzureIntake({token:env.V2_AZURE_PAT||'',importPolicy:env.V2_AZURE_IMPORT_POLICY??'ids',allowedProject:env.V2_AZURE_ALLOWED_PROJECT||'',allowedIds:(env.V2_AZURE_ALLOWED_IDS||'').split(',').filter(x=>/^[1-9]\d*$/.test(x)).map(Number)});
+}
 export class AzureIntake {
- constructor({token='',allowedIds=[],fetcher=fetch}={}){this.token=token;this.allowedIds=new Set(allowedIds);this.fetcher=fetcher;}
- configured(){return Boolean(this.token&&this.allowedIds.size);}
+ constructor({token='',allowedIds=[],importPolicy='ids',allowedProject='',fetcher=fetch}={}){this.token=token;this.allowedIds=new Set(allowedIds.filter(id=>Number.isSafeInteger(id)&&id>0));this.importPolicy=importPolicy;this.allowedProject=allowedProject;this.fetcher=fetcher;}
+ configured(){return Boolean(this.token&&(this.importPolicy==='ids'&&this.allowedIds.size||this.importPolicy==='project'&&this.allowedProject===PROJECT));}
+ canImport(id){return this.configured()&&Number.isSafeInteger(id)&&id>0&&(this.importPolicy==='project'||this.allowedIds.has(id));}
  safeUrl(value){
   try{const u=new URL(value);if(u.origin!==new URL(ORG).origin||u.username||u.password||u.hash||u.port)return null;
    const parts=u.pathname.split('/').slice(1).map(decodeURIComponent);
@@ -29,7 +33,7 @@ export class AzureIntake {
   const detail=new URL(`${ORG}/${PROJECT}/_apis/wit/workitems?api-version=7.1`);detail.searchParams.set('ids',ids.join(','));detail.searchParams.set('fields',fields.join(','));
   const data=await this.get(detail);
   if(!Array.isArray(data.value)||data.value.length>20||data.value.some(i=>!ids.includes(i.id)||i.fields?.['System.TeamProject']!==PROJECT||fields.some(f=>typeof i.fields[f]!=='string'||i.fields[f].length>1024)))throw fail(502,'Azure: metadatos de búsqueda inválidos.');
-  const items=ids.map(id=>data.value.find(i=>i.id===id)).filter(Boolean).map(i=>({id:i.id,title:i.fields['System.Title'],type:i.fields['System.WorkItemType'],state:i.fields['System.State'],project:PROJECT,importAllowed:this.allowedIds.has(i.id)}));
+  const items=ids.map(id=>data.value.find(i=>i.id===id)).filter(Boolean).map(i=>({id:i.id,title:i.fields['System.Title'],type:i.fields['System.WorkItemType'],state:i.fields['System.State'],project:PROJECT,importAllowed:this.canImport(i.id)}));
   return {items,limit:20,mayHaveMore:found.workItems.length===20};
  }
  async get(url,{bytes=1024*1024,json=true,query}={}){
@@ -76,8 +80,8 @@ export class AzureIntake {
  }
  async read(id){
   if(!Number.isSafeInteger(id)||id<=0)throw fail(400,'ID Azure inválido.');
-  if(!this.allowedIds.has(id))throw fail(403,'Work item no permitido para intake.');
   if(!this.configured())throw fail(503,'Intake Azure no configurado.');
+  if(!this.canImport(id))throw fail(403,'Work item no permitido por la política de importación del servidor.');
   const root=await this.item(id),children=[],warnings=[...root.warnings];
   const links=(root.relations||[]).filter(r=>r.rel==='System.LinkTypes.Hierarchy-Forward');
   for(const link of links.slice(0,10)){
