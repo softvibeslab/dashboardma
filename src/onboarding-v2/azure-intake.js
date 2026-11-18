@@ -14,9 +14,27 @@ export class AzureIntake {
    return u;
   }catch{return null;}
  }
- async get(url,{bytes=1024*1024,json=true}={}){
+ async search(query){
+  if(typeof query!=='string'||(query.trim().length<2&&!/^[1-9]\d*$/.test(query.trim()))||query.trim().length>120||/[\x00-\x1f\x7f]/.test(query))throw fail(400,'Busca por ID o título de 2 a 120 caracteres.');
+  if(!this.configured())throw fail(503,'Intake Azure no configurado.');
+  query=query.trim();const numeric=/^[1-9]\d*$/.test(query);
+  if(numeric&&!Number.isSafeInteger(Number(query)))throw fail(400,'ID Azure inválido.');
+  const clause=numeric?`[System.Id] = ${Number(query)}`:`[System.Title] CONTAINS '${query.replace(/'/g,"''")}'`;
+  const url=new URL(`${ORG}/${PROJECT}/_apis/wit/wiql?api-version=7.1`);url.searchParams.set('$top','20');
+  const found=await this.get(url,{query:`SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '${PROJECT}' AND ${clause} ORDER BY [System.ChangedDate] DESC, [System.Id] DESC`});
+  if(!Array.isArray(found.workItems)||found.workItems.length>20||found.workItems.some(i=>!Number.isSafeInteger(i.id)||i.id<=0))throw fail(502,'Azure: resultados de búsqueda inválidos.');
+  const ids=[...new Set(found.workItems.map(i=>i.id))];
+  if(!ids.length)return {items:[],limit:20,mayHaveMore:false};
+  const fields=['System.Title','System.WorkItemType','System.State','System.TeamProject'];
+  const detail=new URL(`${ORG}/${PROJECT}/_apis/wit/workitems?api-version=7.1`);detail.searchParams.set('ids',ids.join(','));detail.searchParams.set('fields',fields.join(','));
+  const data=await this.get(detail);
+  if(!Array.isArray(data.value)||data.value.length>20||data.value.some(i=>!ids.includes(i.id)||i.fields?.['System.TeamProject']!==PROJECT||fields.some(f=>typeof i.fields[f]!=='string'||i.fields[f].length>1024)))throw fail(502,'Azure: metadatos de búsqueda inválidos.');
+  const items=ids.map(id=>data.value.find(i=>i.id===id)).filter(Boolean).map(i=>({id:i.id,title:i.fields['System.Title'],type:i.fields['System.WorkItemType'],state:i.fields['System.State'],project:PROJECT,importAllowed:this.allowedIds.has(i.id)}));
+  return {items,limit:20,mayHaveMore:found.workItems.length===20};
+ }
+ async get(url,{bytes=1024*1024,json=true,query}={}){
   let response;
-  try{response=await this.fetcher(url,{method:'GET',headers:{authorization:`Basic ${Buffer.from(':'+this.token).toString('base64')}`,accept:json?'application/json':'application/octet-stream'},redirect:'error',signal:AbortSignal.timeout(12000)});}catch{throw fail(502,'Azure: conexión fallida o redirección rechazada.');}
+  try{response=await this.fetcher(url,{method:query?'POST':'GET',...(query?{body:JSON.stringify({query})}:{}),headers:{...(query?{'content-type':'application/json'}:{}),authorization:`Basic ${Buffer.from(':'+this.token).toString('base64')}`,accept:json?'application/json':'application/octet-stream'},redirect:'error',signal:AbortSignal.timeout(12000)});}catch{throw fail(502,'Azure: conexión fallida o redirección rechazada.');}
   if(!response.ok){await response.body?.cancel();throw fail(502,`Azure: respuesta HTTP ${response.status}.`);}
   const chunks=[];let size=0;
   try{for await(const chunk of response.body){size+=chunk.length;if(size>bytes)throw Error('limit');chunks.push(chunk);}}

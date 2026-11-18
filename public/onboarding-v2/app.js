@@ -54,9 +54,11 @@ function field(f,value,path,currentView=view){const name=esc(path);const val=f.t
  return `<label class="${f.type==='textarea'?'wide':''}">${esc(f.label)}${input}</label>`;
 }
 function specIndex(){return phase===3?`<details open><summary>Índice de secciones y frentes</summary><ul>${(draft.sections||[]).map((s,i)=>`<li><a href="#record-sections-${i}">${esc(s.id||'Sin ID')} · ${esc(s.title)} · ${esc(s.front)}</a></li>`).join('')||'<li>Añade la sección shared y las secciones por frente.</li>'}</ul></details>`:'';}
+export function nameMatches(value,query){const normalize=s=>String(s??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase();return normalize(value).includes(normalize(query).trim());}
+function searchControl(label,key){return `<div class="wide"><label>${esc(label)}<input type="search" data-name-search="${esc(key)}" maxlength="120"></label><button type="button" data-clear-search="${esc(key)}">Limpiar búsqueda</button><p role="status" data-search-status="${esc(key)}"></p></div>`;}
 function catalogSelect(label,path,value,options){
  const missing=value&&!options.some(o=>o.value===value);
- return `<label>${esc(label)}<select data-path="${esc(path)}"><option value="" ${!value?'selected':''}>Seleccionar…</option>${missing?`<option value="${esc(value)}" selected disabled>No vigente · revisar selección</option>`:''}${options.map(o=>`<option value="${esc(o.value)}" ${o.value===value?'selected':''}>${esc(o.label)}</option>`).join('')}</select></label>`;
+ return `${path.endsWith('.project')?'':searchControl('Buscar '+label+' por nombre',path)}<label>${esc(label)}<select data-path="${esc(path)}"><option value="" ${!value?'selected':''}>Seleccionar…</option>${missing?`<option value="${esc(value)}" selected disabled>No vigente · revisar selección</option>`:''}${options.map(o=>`<option value="${esc(o.value)}" ${o.value===value?'selected':''}>${esc(o.label)}</option>`).join('')}</select></label>`;
 }
 function staffingFields(item,index,currentView){
  const staffing=currentView.staffing,path=`fronts.${index}.`;
@@ -72,7 +74,7 @@ function staffingNotice(data,currentView){
  const s=currentView.staffing;
  return `<div class="notice">Asignación gobernada: elegir candidatos no concede permisos ni confirma responsabilidad. Confirmar o revisar requiere vínculo explícito y rol; sin ellos, la persona puede seleccionarse pero no podrá actuar. <a href="${esc(apiBase+'/classifications')}">Revisar clasificaciones</a> · <a href="${esc(apiBase+'/classifications#reviewSection')}">Revisar propuestas privadas</a>.<p>Catálogo v${esc(s.catalogRevision)} · Copia de usuarios Azure: ${esc(s.directorySyncedAt||'sin fecha verificable')}. No es una consulta en vivo ni una recomendación por carga.</p>${!s.fronts?.length?'<p>No hay frentes activos en el catálogo.</p>':''}${!s.projects?.length?'<p>No hay proyectos disponibles en el catálogo.</p>':''}${s.warning?`<p>${esc(s.warning)}</p>`:''}${data.catalogToken!==s.token?'<p>El catálogo cambió desde el último guardado. Revisa las selecciones y guarda explícitamente; no se actualizan automáticamente.</p>':''}${!currentView.actor.azureIdentityKey?'<p>Falta el vínculo de identidad corporativa explícito. Solicita su configuración a administración; el nombre o correo no habilita confirmar ni aprobar frentes.</p>':''}</div>`;
 }
-export function renderEditor(stage=phase,data=draft,currentView=view){const phase=stage,draft=data,view=currentView;const governed=phase===2&&view.staffing?.required;const schema=schemas[phase];let html=`<div id="editorSurface">${specIndex()}${governed?staffingNotice(draft,view):''}<form id="editor"><div class="fields">${schema.fields.map(f=>field(f,draft[f.key],f.key,view)).join('')}</div>`;
+export function renderEditor(stage=phase,data=draft,currentView=view){const phase=stage,draft=data,view=currentView;const governed=phase===2&&view.staffing?.required;const schema=schemas[phase];let html=`<div id="editorSurface">${phase===2?searchControl('Buscar frentes por tecnología, área o entregable','stage2-fronts'):''}${specIndex()}${governed?staffingNotice(draft,view):''}<form id="editor"><div class="fields">${schema.fields.map(f=>field(f,draft[f.key],f.key,view)).join('')}</div>`;
  for(const [key,list] of Object.entries(schema.lists)){
  html+=`<section class="collection"><h2>${esc(list.title)}</h2>${(draft[key]||[]).map((item,i)=>`<div class="entry" id="record-${key}-${i}"><div class="entry-head"><strong>${esc(item.id||'Nuevo registro')} ${key==='fronts'?`<span class="badge">${item.confirmed?(governed&&draft.catalogToken!==view.staffing.token?'Confirmación no vigente · revisar catálogo':'Confirmado por responsable'):'Propuesto · sin confirmar'}</span>`:''}${key==='sources'?`<span class="badge">${esc(item.status||'Pendiente de guardar')}</span>`:''}</strong><button type="button" class="remove" data-remove="${key}:${i}">Eliminar registro ${i+1}</button></div><div class="fields">${list.fields.filter(f=>!governed||!['owner','reviewer','discipline'].includes(f.key)).map(f=>field(f,item[f.key],`${key}.${i}.${f.key}`,view)).join('')}${governed?staffingFields(item,i,view):''}</div>${key==='fronts'?`<button type="button" data-confirm="${esc(item.id)}">Confirmar responsabilidad de ${esc(item.id||'frente')}</button>`:''}</div>`).join('')||'<p class="muted">Sin registros. Añade información explícita; no se generan datos automáticamente.</p>'}<button type="button" data-add="${key}">Añadir ${esc(list.title.toLowerCase())}</button></section>`;
  }
@@ -85,12 +87,12 @@ export function renderEditor(stage=phase,data=draft,currentView=view){const phas
 export function renderAzureIntake(currentView){
  const enabled=currentView.integrations?.azureIntake&&currentView.actor.roles.some(r=>['editor','coordinator'].includes(r));
  const imports=currentView.state.azureIntakes||[];
- return `<section class="collection"><h2>Importar fuente Azure · solo lectura</h2><p>Propuesta documental determinista · IA no ejecutada. El original se conserva por separado; importar crea una versión y no publica en Azure.</p>${!currentView.integrations?.azureIntake?'<p class="notice">Intake no configurado en este servidor.</p>':''}<form id="azureImportForm"><label>ID permitido del work item<input id="azureId" type="number" min="1" step="1" required></label><button id="azureImport" ${enabled?'':'disabled'}>Importar y proponer versión</button></form><button disabled>Publicar en Azure · pendiente</button><p class="muted">Publicación y aprobación de versión exacta pendientes; no cambia descripción, criterios ni estado Azure. Solo TXT/MD/CSV/JSON UTF-8 extraíbles; otros formatos quedan como metadata.</p>${imports.map(i=>`<details><summary>Fuente Azure #${esc(i.snapshot.root.id)} r${esc(i.snapshot.root.rev)} → V${esc(i.version)} · documental determinista</summary><p class="hash">Fuente SHA-256 ${esc(i.sourceHash)}</p><ul>${(i.snapshot.warnings||[]).map(w=>`<li>${esc(w)}</li>`).join('')}</ul><p>Campos, comentarios con versiones/fechas, relaciones e hijos (original separado; texto de propuesta acotado). Fuentes multi-lectura, no snapshot transaccional Azure.</p><pre>${esc(pretty(i.snapshot))}</pre></details>`).join('')}</section>`;
+ return `<section class="collection"><h2>Importar fuente Azure · solo lectura</h2><p>Propuesta documental determinista · IA no ejecutada. El original se conserva por separado; importar crea una versión y no publica en Azure.</p>${!currentView.integrations?.azureIntake?'<p class="notice">Intake no configurado en este servidor.</p>':''}<form id="azureSearchForm"><label>Buscar work item por ID o título<input id="azureQuery" type="search" maxlength="120" required></label><button id="azureSearch" ${enabled?'':'disabled'}>Buscar en Azure</button></form><p class="muted">Consulta en agileNestCorp, máximo 20 resultados. Selecciona un resultado y después confirma la importación. La búsqueda no amplía los IDs autorizados.</p><div id="azureResults" aria-live="polite"></div><form id="azureImportForm"><label>ID permitido del work item<input id="azureId" type="number" min="1" step="1" required></label><button id="azureImport" ${enabled?'':'disabled'}>Importar y proponer versión</button></form><button disabled>Publicar en Azure · pendiente</button><p class="muted">Publicación y aprobación de versión exacta pendientes; no cambia descripción, criterios ni estado Azure. Solo TXT/MD/CSV/JSON UTF-8 extraíbles; otros formatos quedan como metadata.</p>${imports.map(i=>`<details><summary>Fuente Azure #${esc(i.snapshot.root.id)} r${esc(i.snapshot.root.rev)} → V${esc(i.version)} · documental determinista</summary><p class="hash">Fuente SHA-256 ${esc(i.sourceHash)}</p><ul>${(i.snapshot.warnings||[]).map(w=>`<li>${esc(w)}</li>`).join('')}</ul><p>Campos, comentarios con versiones/fechas, relaciones e hijos (original separado; texto de propuesta acotado). Fuentes multi-lectura, no snapshot transaccional Azure.</p><pre>${esc(pretty(i.snapshot))}</pre></details>`).join('')}</section>`;
 }
 function assigned(object){return object==='spec'?view.state.phases[4].reviewer:object==='tests'?view.state.phases[5].reviewer:view.state.phases[2].fronts.find(f=>`front:${f.id}`===object)?.reviewer;}
 function applyPermissions(){
  const actor=view.actor,editor=actor.roles.includes('editor');
- if(!editor){document.querySelectorAll('#editor input,#editor select,#editor textarea,#editor button').forEach(e=>e.disabled=true);if($('saveState'))$('saveState').textContent='Solo lectura · se requiere rol editor para modificar';}
+ if(!editor){document.querySelectorAll('#editor input,#editor select,#editor textarea,#editor button').forEach(e=>{if(!e.hasAttribute('data-name-search')&&!e.hasAttribute('data-clear-search'))e.disabled=true;});if($('saveState'))$('saveState').textContent='Solo lectura · se requiere rol editor para modificar';}
  document.querySelectorAll('[data-confirm]').forEach(b=>b.disabled=!canConfirmFront(actor,view.state.phases[2].fronts.find(f=>f.id===b.dataset.confirm),view.staffing,view.state.phases[2]));
  if($('review'))$('review').disabled=actor.id!==draft.reviewer||!actor.roles.includes(phase===4?'reviewer':'qa');
  document.querySelectorAll('[data-decision]').forEach(b=>{const o=view.objects[Number(b.dataset.decision.split(':')[0])];b.disabled=!canDecideObject(actor,o.object,view.state.phases,view.staffing);});
@@ -109,6 +111,33 @@ function render(){
 }
 function move(p){if(dirty&&!confirm('Hay cambios sin guardar. ¿Descartarlos y cambiar de fase?'))return;phase=p;sessionStorage.setItem('v2-phase',String(p));dirty=false;render();$('phase').focus();}
 function bind(){
+ document.querySelectorAll('[data-name-search]').forEach(input=>{
+  const key=input.dataset.nameSearch, status=[...document.querySelectorAll('[data-search-status]')].find(e=>e.dataset.searchStatus===key);
+  input.oninput=()=>{
+   let matches=0;
+   if(key==='stage2-fronts')document.querySelectorAll('[id^="record-fronts-"]').forEach(entry=>{
+    const values=['discipline','area','deliverable'].map(k=>entry.querySelector(`[data-path$=".${k}"]`)?.value||'');
+    const select=entry.querySelector('[data-path$=".catalogFrontId"]');if(select)values.push(select.selectedOptions[0]?.textContent||'');
+    const match=nameMatches(values.join(' '),input.value);entry.hidden=!match;if(match)matches++;
+   });
+   else{const select=[...document.querySelectorAll('select[data-path]')].find(e=>e.dataset.path===key);if(select)for(const option of select.options){const match=!!option.value&&nameMatches(option.textContent,input.value);option.hidden=!!option.value&&!option.selected&&!match;if(match&&!option.disabled)matches++;}}
+   status.textContent=matches?`${matches} coincidencia(s). Las selecciones actuales se conservan.`:'Sin resultados. Las selecciones actuales se conservan; limpia la búsqueda para ver todas las opciones.';
+  };
+ });
+ document.querySelectorAll('[data-clear-search]').forEach(button=>button.onclick=()=>{const input=[...document.querySelectorAll('[data-name-search]')].find(e=>e.dataset.nameSearch===button.dataset.clearSearch);input.value='';input.dispatchEvent(new Event('input'));input.focus();});
+
+ if($('azureSearchForm'))$('azureSearchForm').onsubmit=async e=>{
+  e.preventDefault();if(busy)return;busy=true;$('azureSearch').disabled=true;
+  const results=$('azureResults');results.textContent='Buscando en Azure…';
+  try{
+   const data=await api('/api/azure/search?q='+encodeURIComponent($('azureQuery').value));
+   if(!results.isConnected)return;
+   results.innerHTML=data.items.length?data.items.map(i=>`<div class="entry"><strong>#${esc(i.id)} · ${esc(i.title)}</strong><p>${esc(i.type)} · ${esc(i.state)} · ${esc(i.project)}</p><button type="button" data-azure-select="${esc(i.id)}" ${i.importAllowed?'':'disabled'}>Seleccionar #${esc(i.id)}</button>${i.importAllowed?'':'<p>Importación no autorizada para este ID; solicita revisión al administrador.</p>'}</div>`).join(''):'<p>Sin resultados para esta consulta.</p>';
+   if(data.mayHaveMore)results.insertAdjacentHTML('beforeend','<p>Se alcanzó el límite de 20; precisa el ID o título.</p>');
+   results.querySelectorAll('[data-azure-select]').forEach(b=>b.onclick=()=>{$('azureId').value=b.dataset.azureSelect;message('Seleccionado #'+b.dataset.azureSelect+'. Revisa y confirma la importación; todavía no se ha importado.');$('azureImport').focus();});
+  }catch(error){results.textContent=error.message;}finally{busy=false;if($('azureSearch'))$('azureSearch').disabled=!view.integrations?.azureIntake||!view.actor.roles.some(r=>['editor','coordinator'].includes(r));}
+ };
+
  if($('azureImportForm'))$('azureImportForm').onsubmit=async e=>{
   e.preventDefault();if(busy)return;
   if(dirty){message('Guarda o descarta los cambios locales antes de importar.',true);return;}

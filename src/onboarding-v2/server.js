@@ -80,6 +80,12 @@ export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/stat
      return send(res,405,{error:'Método no permitido.'});
     }catch(e){if(e.status)throw e;return send(res,503,{error:'Catálogo privado no disponible. Recarga o solicita revisión al operador.'});}
    }
+   if(url.pathname==='/api/azure/search'){
+    if(req.method!=='GET')return send(res,405,{error:'Método no permitido.'});
+    if(!actor.roles.some(r=>['editor','coordinator'].includes(r)))return send(res,403,{error:'Rol editor o coordinator requerido.'});
+    if([...url.searchParams.keys()].some(k=>k!=='q')||url.searchParams.getAll('q').length!==1)return send(res,400,{error:'Solo se admite una búsqueda por ID o título.'});
+    return send(res,200,await azureIntake.search(url.searchParams.get('q')));
+   }
    if(url.pathname==='/api/azure/import'){
     if(req.method!=='POST')return send(res,405,{error:'Método no permitido.'});
     if(!actor.roles.some(r=>['editor','coordinator'].includes(r)))return send(res,403,{error:'Rol editor o coordinator requerido.'});

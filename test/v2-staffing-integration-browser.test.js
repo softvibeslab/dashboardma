@@ -36,6 +36,14 @@ test('Etapa 2 real browser+backend: filtered candidates, persistence, owner conf
    set('fronts.0.owner','az-owner');set('fronts.0.reviewer','az-reviewer');
    const before=el('revisionStatus').textContent;el('editor').requestSubmit();await wait(()=>el('revisionStatus').textContent!==before);
    let state=await(await fetch('${base}/api/state')).json();check(state.state.phases[2].catalogRevision==='9','Server catalog provenance');check(!state.state.phases[2].fronts[0].confirmed,'Selection is not confirmation');check(state.state.phases[2].fronts[0].ownerName==='Responsable de prueba','Derived owner name');
+   const search=(key,value)=>input('[data-name-search="'+key+'"]',value);
+   const selected=()=>['catalogFrontId','owner','reviewer'].map(k=>q('[data-path="fronts.0.'+k+'"]').value).join('|');const saved=selected(),revision=el('revisionStatus').textContent;
+   search('fronts.0.catalogFrontId','ANDROID');search('fronts.0.owner','RESPONSABLE');search('fronts.0.reviewer','zz-no-person');
+   check(el('phase').textContent.includes('Sin resultados'),'No results feedback');check(selected()===saved,'Search preserves saved choices');
+   check(!q('[data-path="fronts.0.reviewer"]').selectedOptions[0].hidden,'Selected reviewer stays visible despite no match');
+   search('stage2-fronts','area DE PRUEBA');check(!q('#record-fronts-0').hidden,'Accent insensitive area search');search('stage2-fronts','ZZ-no-front');check(q('#record-fronts-0').hidden,'Nonmatching draft front filtered');
+   document.querySelectorAll('[data-clear-search]').forEach(b=>b.click());check(!q('#record-fronts-0').hidden,'Clear restores all fronts');check(selected()===saved,'Clear preserves saved choices');
+   check(el('revisionStatus').textContent===revision,'Search never auto writes');const afterSearch=await(await fetch('${base}/api/state')).json();check(afterSearch.state.revision===state.state.revision,'Backend unchanged by filters');
    check(!q('[data-confirm="F1"]').disabled,'Explicitly linked owner can confirm');const rev=el('revisionStatus').textContent;q('[data-confirm="F1"]').click();await wait(()=>el('revisionStatus').textContent!==rev);
    state=await(await fetch('${base}/api/state')).json();check(state.state.phases[2].fronts[0].confirmedBy==='owner','Real server confirmation identity');
    set('fronts.0.project','P2');check(q('[data-path="fronts.0.owner"]').value==='','Project change clears owner');check(q('[data-path="fronts.0.reviewer"]').value==='','Project change clears reviewer');check(q('[data-path="fronts.0.deliverable"]').value==='AAR de prueba','Deliverable preserved');check(el('phase').textContent.includes('No hay candidatos'),'Empty project candidate explanation');
