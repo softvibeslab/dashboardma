@@ -1,0 +1,35 @@
+# Review recipe only: no proxy labels, no production routing, no published ports.
+services:
+  onboarding-v3:
+    image: dashboardma-onboarding-v3:${V3_RELEASE:?Set the reviewed full commit}
+    build:
+      context: ..
+      dockerfile: Dockerfile.onboarding-v3
+      args:
+        V3_REVISION: ${V3_RELEASE:?Set the reviewed full commit}
+    container_name: dashboardma-onboarding-v3
+    env_file:
+      - ${V3_SSO_ENV_FILE:?Private V3 runtime file required}
+    environment:
+      V3_AUTH_MODE: sso
+      V3_BASE_PATH: /dashboard/onboarding-v3
+      V3_PUBLIC_ORIGIN: ${V3_PUBLIC_ORIGIN:?Exact corporate origin required}
+      V3_DATA_FILE: /app/data/onboarding-v3/state.json
+      V3_IDENTITY_ROLES_FILE: /run/v3/roles.json
+      V3_AZURE_IMPORT_POLICY: project
+      V3_AZURE_ALLOWED_PROJECT: agileNestCorp
+      V3_PUBLIC_DIRECTORY: 'false'
+      V3_HERMES_AUTHORIZED: 'false'
+    volumes:
+      - onboarding_v3_data:/app/data
+      - ${V3_ROLES_FILE:?Private approved exact tenant and oid roles required}:/run/v3/roles.json:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    pids_limit: 128
+    restart: 'no'
+volumes:
+  onboarding_v3_data:
+    name: dashboardma-onboarding-v3-data

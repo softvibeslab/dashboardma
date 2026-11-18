@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex, nofollow"><title>Clasificaciones y participación · MobilityApps</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/classifications.css"><script type="module" src="/classifications.js"></script></head>
+<body class="catalog-page">
+<a class="skip" href="#catalogMain">Ir al catálogo</a>
+<header><a class="brand" href="/">Mobility<span>Apps</span></a><span class="edition">Clasificaciones y participación</span><a href="/">Volver al onboarding</a><span id="catalogIdentity">Comprobando sesión…</span></header>
+<main id="catalogMain" class="catalog-main">
+<h1>Clasificaciones y participación</h1>
+<p class="intro">Consulta los usuarios de la copia sincronizada de Azure y sus frentes. La consulta pública no cambia equipos, permisos ni asignaciones en Azure DevOps.</p>
+<section id="publicDirectorySection" hidden aria-labelledby="publicDirectoryHeading">
+<div class="section-heading"><div><h2 id="publicDirectoryHeading">Usuarios sincronizados · consulta pública</h2><p>Visible sin iniciar sesión. Solo nombres y frentes; correos, proyectos y datos de administración permanecen privados.</p></div><button id="publicDirectoryReload">Actualizar listado</button></div>
+<p id="publicDirectorySource" class="muted"></p>
+<div class="catalog-filters public-filters" role="search" aria-label="Buscar usuarios sincronizados"><label>Buscar por nombre<input id="publicDirectoryQuery" type="search" placeholder="Nombre de la persona"></label><label>Frente<select id="publicDirectoryFront"><option value="">Todos los frentes</option><option value="__unclassified">Sin clasificar</option></select></label></div>
+<p id="publicDirectoryCount" role="status" aria-live="polite"></p><div id="publicDirectoryList" class="table-wrap" tabindex="0" role="region" aria-label="Listado público de usuarios"></div>
+<p class="muted">La lista corresponde a una copia de Azure, no a disponibilidad laboral en tiempo real. Los frentes aparecen cuando existe una participación habilitada y un frente activo.</p>
+</section>
+<p id="catalogMessage" role="status" aria-live="polite">Cargando catálogo…</p>
+<p id="accessHelp" hidden><a href="/">Iniciar sesión desde el onboarding</a> para administrar clasificaciones. La consulta pública no requiere acceso V3.</p>
+<div id="catalogWorkspace" hidden>
+<div class="catalog-toolbar"><span id="catalogRevision"></span><button id="catalogReload">Recargar catálogo</button><span id="readOnly" hidden>Solo lectura. Un coordinador administra los registros.</span></div>
+<nav class="catalog-nav" aria-label="Secciones del catálogo"><a href="#reviewSection">Propuestas privadas · Etapa 2</a><a href="#frontSection">Frentes</a><a href="#peopleSection">Participación de personas</a><a href="#historySection">Historial</a></nav>
+<section id="reviewSection" aria-labelledby="reviewHeading">
+<div class="section-heading"><div><h2 id="reviewHeading">Propuestas privadas de clasificación · Etapa 2</h2><p>Revisa la evidencia histórica antes de confirmar. Importar o consultar no habilita participaciones, no mide productividad ni demuestra disponibilidad.</p></div><button id="importResearch">Importar lote privado del servidor</button></div>
+<p id="researchSource" class="muted"></p>
+<div class="catalog-filters" role="search" aria-label="Filtrar propuestas privadas"><label>Buscar persona<input id="reviewQuery" type="search" placeholder="Nombre de la copia V3"></label><label>Frente propuesto<select id="reviewFrontFilter"></select></label><label>Confianza<select id="reviewConfidence"><option value="">Todas</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja · no confirmable</option><option value="insuficiente">Insuficiente</option></select></label><label>Estado<select id="reviewStatus"><option value="pending">Pendiente</option><option value="">Todos</option><option value="accepted">Aceptada</option><option value="corrected">Corregida</option><option value="rejected">Rechazada</option></select></label><label>Lote / periodo<select id="reviewBatch"></select></label></div>
+<p id="reviewCount" role="status" aria-live="polite"></p>
+<form id="reviewForm" class="catalog-editor" hidden>
+<h3 id="reviewFormTitle">Revisar propuesta exacta</h3><p id="reviewExact" class="muted"></p>
+<label>Decisión<select id="reviewOutcome" required><option value="">Selecciona una decisión</option><option value="accept">Aceptar frente propuesto</option><option value="correct">Corregir frente</option><option value="reject">Rechazar propuesta</option></select></label>
+<label>Motivo de la decisión<textarea id="reviewReason" required maxlength="2000" rows="3"></textarea></label>
+<fieldset id="reviewParticipation"><legend>Confirmación explícita de participación</legend><p>No hay selección automática. Los proyectos proceden de la copia actual autorizada; la evidencia histórica no concede autorización.</p><div class="fields"><label>Frente actual<select id="reviewFront" required></select></label><label>Nivel<select id="reviewLevel" required><option value="">Selecciona nivel</option><option value="principal">Principal</option><option value="secondary">Secundario</option></select></label><label>Habilitación para nuevas asignaciones<select id="reviewEnabled" required><option value="">Decide explícitamente</option><option value="false">No habilitar</option><option value="true">Habilitar (no acredita disponibilidad)</option></select></label></div>
+<fieldset><legend>Participación validada por coordinador</legend><div class="checkboxes"><label class="check"><input name="reviewRole" type="checkbox" value="developer">Desarrollador</label><label class="check"><input name="reviewRole" type="checkbox" value="reviewer">Revisor</label><label class="check"><input name="reviewRole" type="checkbox" value="support">Apoyo</label></div></fieldset>
+<fieldset><legend>Proyectos de la copia V3 actual</legend><div id="reviewProjects" class="checkboxes"></div></fieldset></fieldset>
+<p>Guardar aplica la decisión exacta y, solo al aceptar o corregir, crea la participación validada en la misma transacción del catálogo. No cambia roles, permisos ni Azure.</p>
+<div class="actions"><button type="submit" class="primary">Guardar decisión revisada</button><button id="cancelReview" type="button">Cancelar revisión</button></div>
+</form>
+<div id="reviewList" class="table-wrap"></div>
+</section>
+<section id="frontSection" aria-labelledby="frontHeading">
+<div class="section-heading"><div><h2 id="frontHeading">Frentes de trabajo</h2><p>Una especialidad, no un área de negocio. Desactiva un frente para conservar sus relaciones.</p></div><button id="newFront" class="primary">Crear frente</button></div>
+<form id="frontForm" class="catalog-editor" hidden>
+<h3 id="frontFormTitle">Crear frente</h3><input id="frontId" type="hidden">
+<div class="fields"><label>Nombre<input id="frontName" required maxlength="120" placeholder="Ej. Android"></label><label class="check"><input id="frontActive" type="checkbox" checked>Frente activo</label><label class="wide">Descripción<textarea id="frontDescription" maxlength="2000" rows="2"></textarea></label></div>
+<div class="actions"><button type="submit" class="primary">Guardar frente</button><button type="button" id="cancelFront">Cancelar</button></div>
+</form>
+<div id="frontList" class="table-wrap"></div>
+</section>
+<section id="peopleSection" aria-labelledby="peopleHeading">
+<div class="section-heading"><div><h2 id="peopleHeading">Participación de personas</h2><p>Una persona puede participar en varios frentes y tener un frente principal habilitado.</p></div><button id="newParticipation" class="primary">Asignar participación</button></div>
+<div class="source-row"><p id="directoryStatus"></p><button id="syncDirectory">Actualizar usuarios desde la copia de Azure</button></div>
+<p class="muted">Se muestran identidades de una copia sincronizada, no disponibilidad en tiempo real. “Habilitado para asignaciones” es una decisión del coordinador; no acredita capacidad libre.</p>
+<form id="participationForm" class="catalog-editor" hidden>
+<h3 id="participationFormTitle">Asignar participación</h3><input id="participationId" type="hidden">
+<div class="fields"><label>Persona de Azure<select id="participationUser" required></select></label><label>Frente<select id="participationFront" required></select></label><label>Nivel<select id="participationLevel"><option value="principal">Principal</option><option value="secondary">Secundario</option></select></label><label class="check"><input id="participationEnabled" type="checkbox" checked>Habilitado para nuevas asignaciones</label></div>
+<fieldset><legend>Puede participar como</legend><div class="checkboxes"><label class="check"><input type="checkbox" name="participationRole" value="developer">Desarrollador</label><label class="check"><input type="checkbox" name="participationRole" value="reviewer">Revisor</label><label class="check"><input type="checkbox" name="participationRole" value="support">Apoyo</label></div></fieldset>
+<fieldset><legend>Proyectos autorizados para esta participación</legend><div id="participationProjects" class="checkboxes"></div></fieldset>
+<label>Observaciones<textarea id="participationNotes" maxlength="2000" rows="2"></textarea></label>
+<p class="muted">Guardar confirma esta clasificación con tu identidad. No concede permisos de acceso ni escribe en Azure.</p>
+<div class="actions"><button type="submit" class="primary">Guardar participación</button><button type="button" id="cancelParticipation">Cancelar</button></div>
+</form>
+<div class="catalog-filters" role="search" aria-label="Filtrar participaciones"><label>Buscar persona<input id="filterQuery" type="search" placeholder="Nombre o correo"></label><label>Frente<select id="filterFront"><option value="">Todos</option></select></label><label>Proyecto<select id="filterProject"><option value="">Todos</option></select></label><label>Participación<select id="filterRole"><option value="">Todas</option><option value="developer">Desarrollador</option><option value="reviewer">Revisor</option><option value="support">Apoyo</option></select></label><label>Habilitación<select id="filterEnabled"><option value="">Todas</option><option value="true">Habilitadas</option><option value="false">No habilitadas</option></select></label></div>
+<p id="resultCount" role="status" aria-live="polite"></p><div id="participationList" class="table-wrap"></div>
+</section>
+<section id="historySection" aria-labelledby="historyHeading"><h2 id="historyHeading">Historial de cambios</h2><p>Incluye autor, fecha y valores anteriores y posteriores. No sustituye una bitácora externa inmutable.</p><div id="catalogHistory"></div></section>
+</div>
+</main>
+</body></html>

@@ -1,0 +1,15 @@
+FROM node:24-alpine
+ARG V3_REVISION=uncommitted
+LABEL org.opencontainers.image.revision=$V3_REVISION
+WORKDIR /app
+ENV NODE_ENV=production V3_PORT=4193 V3_LISTEN_HOST=0.0.0.0 V3_BASE_PATH=/dashboard/onboarding-v3 V3_AUTH_MODE=sso V3_DATA_FILE=/app/data/onboarding-v3/state.json V3_IDENTITY_ROLES_FILE=/run/v3/roles.json
+COPY --chown=node:node package.json ./
+COPY --chown=node:node src/auth.js ./src/auth.js
+COPY --chown=node:node src/onboarding-v2 ./src/onboarding-v2
+COPY --chown=node:node src/onboarding-v3 ./src/onboarding-v3
+COPY --chown=node:node public/onboarding-v3 ./public/onboarding-v3
+RUN mkdir -p /app/data/onboarding-v3 && chown -R node:node /app/data
+USER node
+EXPOSE 4193
+HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:4193/dashboard/onboarding-v3/api/config').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "src/onboarding-v3/server.js"]

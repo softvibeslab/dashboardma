@@ -1,0 +1,8 @@
+# Optional authorized sanitized snapshots, never the V2 state volume.
+services:
+  onboarding-v3:
+    environment:
+      V3_AZURE_DIRECTORY_FILE: /run/v3-source/users.json
+      V3_CATALOG_SOURCE_FILE: /run/v3-source/catalog.json
+    volumes:
+      - ${V3_SOURCE_DIRECTORY:?Authorized sanitized projection directory required}:/run/v3-source:ro
