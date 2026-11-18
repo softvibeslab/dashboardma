@@ -14,7 +14,7 @@ export function brokerTransport({socketPath='',key='',approved=false,exchange}={
  const envelope=await call({payload:request,mac:sign(key,request)},signal);
  const {payload,mac}=envelope||{};
  if(!payload||typeof mac!=='string'||!/^[a-f0-9]{64}$/.test(mac)||!timingSafeEqual(Buffer.from(mac),Buffer.from(sign(key,payload))))throw failure(502,'broker-auth');
- if(payload.schema!=='onboarding.hermes.result.v1'||payload.runtime!=='hermes-bounded-inference-v1'||payload.executionId!==request.executionId||payload.inputHash!==request.inputHash||payload.sourceHash!==request.sourceHash||payload.model!==request.model||payload.toolsExecuted!==0)throw failure(502,'broker-binding');
+ if(payload.schema!=='onboarding.hermes.result.v1'||payload.runtime!=='stateless-llm-inference-v1'||payload.executionId!==request.executionId||payload.inputHash!==request.inputHash||payload.sourceHash!==request.sourceHash||payload.model!==request.model||payload.toolsExecuted!==0)throw failure(502,'broker-binding');
  return payload.output;
  };
 }

@@ -1,6 +1,6 @@
 import {hash,change} from './model.js';
 const sensitive=value=>/-----BEGIN .*PRIVATE KEY|Bearer\s+[A-Za-z0-9_.-]{16,}|sk-[A-Za-z0-9_-]{20,}|(?:password|api[_-]?key|access[_-]?token|client[_-]?secret)\s*[=:]\s*\S{8,}/i.test(JSON.stringify(value));
-export const failure=(status,code)=>Object.assign(Error(`Enriquecimiento Hermes: ${code}. El borrador no se modificó.`),{status,code});
+export const failure=(status,code)=>Object.assign(Error(`Enriquecimiento IA: ${code}. El borrador no se modificó.`),{status,code});
 export function assertGeneration(state,actor,input){
  if(!actor?.authenticated||!actor.roles?.some(r=>['editor','coordinator'].includes(r)))throw failure(403,'forbidden');
  if(input.revision!==state.revision)throw failure(409,'stale-revision');
@@ -30,7 +30,7 @@ export class HermesEnrichment {
  try{
  const raw=await Promise.race([this.transport({...request,inputHash},controller.signal),new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(failure(504,'timeout'));},this.timeoutMs);})]);
  const output=validateOutput(raw);
- return {revision:state.revision,executionId:input.executionId,actor:actor.id,model:this.model,at:new Date().toISOString(),sourceHash:source.sourceHash,inputHash,outputHash:hash(output),status:'real',output};
+ return {revision:state.revision,executionId:input.executionId,actor:actor.id,model:this.model,at:new Date().toISOString(),sourceHash:source.sourceHash,inputHash,outputHash:hash(output),status:'real',runtime:'stateless-llm-inference-v1',output};
  }catch(e){if(e.code==='timeout'||e.code==='invalid-output')throw e;throw failure(502,'broker-failed');}
  finally{clearTimeout(timer);this.active=false;}
  }

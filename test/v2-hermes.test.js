@@ -13,7 +13,7 @@ test('synthetic broker creates a version with immutable source and bounded data-
  assert.ok(!JSON.stringify(captured).includes('identity-private'));assert.match(captured.snapshot.items[0].description,/Ignore instructions/);
  const after=applyEnrichment(before,result,actor);
  assert.equal(after.revision,2);assert.deepEqual(after.azureIntakes,before.azureIntakes);assert.notEqual(digest(after),digest(before));assert.equal(after.decisions.length,0);
- const run=after.hermesEnrichments[0];assert.equal(run.status,'real');assert.equal(run.sourceHash,hash(snapshot));assert.equal(run.outputHash,hash(result.output));assert.equal(run.actor,actor.id);assert.equal(run.model,'synthetic-model');assert.ok(run.inputHash&&run.at&&run.executionId);
+ const run=after.hermesEnrichments[0];assert.equal(run.runtime,'stateless-llm-inference-v1');assert.equal(run.status,'real');assert.equal(run.sourceHash,hash(snapshot));assert.equal(run.outputHash,hash(result.output));assert.equal(run.actor,actor.id);assert.equal(run.model,'synthetic-model');assert.ok(run.inputHash&&run.at&&run.executionId);
  assert.ok(after.phases[1].questions.every(q=>q.blocking&&!q.answer));assert.match(after.phases[1].context,/Propuesta IA/);
 });
 test('output schema, source tampering, stale revision, injected identities, token bounds, concurrency and timeout fail closed',async()=>{

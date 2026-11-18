@@ -1,93 +1,58 @@
-# V2 · enriquecimiento Hermes/IA sobre snapshot Azure
+# V2 · enriquecimiento seguro por LLM (sin agente Hermes)
 
-## Resultado y límite de este incremento
+## Resultado del candidato
 
-Implementado el flujo completo de **contrato/adapter fail-closed**, persistencia versionada, endpoint protegido, UI y pruebas con broker sintético. **No se ejecutó inferencia real**, no se arrancó un broker ni se llamó a un proveedor. No se desplegó, reinició, publicó ni escribió en Azure.
+**Inferencia real completada con contenido exclusivamente sintético**, mediante broker autenticado por socket Unix y worker aislado por namespaces Linux/bubblewrap. Es una llamada LLM directa con el proveedor `openai-codex` existente, **no ejecución del agente Hermes**. UI, marcador de respuesta y registro versionado lo indican. No se desplegó producción, reinició gateway, activó dashboard Hermes, aceptó participaciones ni publicó Azure. El caso privado #3134 y datos de clientes no se enviaron al modelo.
 
-El piloto privado 3134 no se envió a ningún modelo y no se incorporó a Git. Las pruebas utilizan exclusivamente datos sintéticos. Un resultado `real` en esas pruebas comprueba la rama del contrato de éxito, **no acredita una ejecución real de Hermes**.
+Base real: imagen viva `dashboardma-onboarding-v2:dca1278d32fbf5c69bf487e97df807887a46d1da`, healthy. Su label Compose apunta al checkout antiguo de classification-review; no se usó ese HEAD como fuente. Candidato nuevo en `/root/workspaces/dashboardma-onboarding-v2-safe-enrichment`, rama `feature/onboarding-v2-safe-enrichment`, desde `dca1278` más contrato `1a07eed` integrado por cherry-pick (`691f3eb`). Se conservaron búsqueda Azure, política de importación por proyecto `agileNestCorp`, filtros de fase 2 y revisión privada de clasificaciones. No se modificaron los cambios ajenos ni los avances untracked del checkout anterior.
 
-### Descubrimiento oficial e instalado
+## Investigación oficial y fuente instalada
 
-Consultados `https://hermes-agent.nousresearch.com/docs/llms.txt` y la documentación instalada `website/docs/user-guide/features/subscription-proxy.md`. Código instalado inspeccionado en `/usr/local/lib/hermes-agent`, revisión `3b421578588243f920886e6fe79a6faa87ea026e`:
+- Índice oficial: https://hermes-agent.nousresearch.com/docs/llms.txt
+- https://hermes-agent.nousresearch.com/docs/developer-guide/programmatic-integration
+- https://hermes-agent.nousresearch.com/docs/user-guide/features/subscription-proxy
+- Instalación inspeccionada: `/usr/local/lib/hermes-agent`, revisión `ae2a81ccc00e9b7c06301523e5bb09608397149c`.
+- `gateway/platforms/api_server.py`: ejecuta agente/herramientas; no usado.
+- `hermes_cli/proxy/server.py`: passthrough, sin autenticación propia de clientes; no expuesto ni usado.
+- `agent/codex_headers.py` y transporte Codex: endpoint HTTPS oficial, headers de cuenta/residencia y Responses. Se implementó un cliente mínimo del protocolo, **no se importó Hermes**, su resolver extensible, plugins o hooks. Esto no se presenta como una API pública especializada de Hermes ni garantiza estabilidad futura del protocolo upstream.
+- No se usaron `--toolsets ''`, safe-mode, ACP, sesiones o gateways como barreras de aislamiento.
 
-- `hermes_cli/proxy/server.py`: proxy oficial de inferencia, sin loop agente. No autentica al cliente con una credencial propia; acepta cualquier bearer. Reenvía el cuerpo, no impone este snapshot/schema/política y puede reintentar un 401/429. **No satisface por sí solo el broker especializado autenticado requerido.**
-- `gateway/platforms/api_server.py`: API del agente y sus herramientas/sesión, no frontera de inferencia sin herramientas.
-- `cli.py:1519–1524,1563–1564`: toolsets vacíos no constituyen exclusión explícita y pueden resolver defaults. No se invocó `hermes chat --toolsets ''`; safe-mode tampoco se utilizó como aislamiento.
-- No se descubrió un broker especializado autorizado/configurado para este dashboard. No se inspeccionaron ni copiaron pools OAuth; no se modificaron perfiles, gateways ni credenciales de personas.
+## Arquitectura y fronteras
 
-**BLOQUEO REAL:** falta un servicio Hermes local especializado autenticado, con integración de proveedor autorizada, modelo/coste/scope aprobados, ejecución demostrablemente sin herramientas y controles del contrato siguiente. El proxy genérico instalado y el API de agente no son sustitutos seguros. Tener un proveedor en esta conversación no autoriza transportar su OAuth a la aplicación ni presentar una llamada LLM directa como ejecución de Hermes.
+1. Navegador → servidor V2: sesión/RBAC existente, editor/coordinator, Origin exacto y revisión actual. Solo acepta `{revision,executionId}`; no recibe prompt/modelo/URL/tools/snapshot del navegador.
+2. V2 → broker de host: `POST /v1/onboarding/enrich` exclusivamente sobre Unix socket; HMAC-SHA256 con clave **dedicada al cliente**, distinta de OAuth. MAC de salida y binding a executionId/modelo/inputHash/sourceHash/toolsExecuted=0. El esquema conserva nombres históricos `onboarding.hermes.*` por compatibilidad; runtime es `stateless-llm-inference-v1`.
+3. Broker: valida allowlist exacta de campos/política/modelo y tamaño; reserva durable con `wx`, fsync de archivo/directorio, lock de dueño y journal separado. Una ejecución activa, sin cola de inferencia ni retries. Hasta 100 IDs por journal; no elimina reservas para repetir efectos. Replay completado devuelve resultado previo; reserva interrumpida/fallida queda terminal. Lock abandonado requiere recuperación manual con todos los escritores detenidos.
+4. Broker → worker nuevo por llamada: `/usr/bin/bwrap`, sin shell, namespaces user/PID/mount/IPC/UTS/cgroup, capabilities eliminadas, `--die-with-parent`. Python `/usr/bin/python3 -I -S`: sin site/PYTHONPATH, imports Hermes, agente, dispatcher, tools, hooks, plugins, skills ni loader de contexto/memoria.
+5. Filesystem worker: `/usr`, librerías y certificados/DNS de solo lectura; `/usr/local` oculto (incluye instalación Hermes), raíz/home/workspaces/volúmenes del host ocultos. Solo worker fijo y **archivo existente** `/root/.hermes/auth.json` montados read-only en el worker confiable; nunca en V2. El lector elige únicamente el singleton openai-codex, no rota pools, refresca, escribe o copia credenciales. Token expirado falla cerrado. El archivo original puede contener pools; el montaje permanece exclusivamente en el proceso de credenciales, no en dashboard ni sus volúmenes.
+6. Worker → endpoint fijo `https://chatgpt.com/backend-api/codex/responses`: TLS verificado, sin redirects/retries, sin URL/prompt adicional del cliente. `tools=[]`, `tool_choice=none`, `store=false`, sin previous_response_id; JSON Schema estricto context/constraints strings y questions string[]. Si upstream cambia/rechaza estos controles se falla, no se eliminan para conseguir una respuesta.
 
-## Código y rutas
+**Límites reales:** 48.000 bytes del payload; prompt completo vuelve a acotarse conservadoramente por bytes con 2.048 bytes de margen (no se afirma conteo exacto de tokenizer); `max_output_tokens=2000` upstream y usage de salida <=2000 al aceptar. Salida JSON <=32.000 bytes; stream <=262.144 bytes y línea <=65.536. Timeout global <=45 s con SIGKILL del supervisor, alarma worker 44 s, socket upstream <=40 s, CPU 10 s, AS 256 MiB, 32 FDs, fsize/core=0. No hay fallback sin bubblewrap ni por fallo de namespace.
 
-- `src/onboarding-v2/hermes-enrichment.js`: proyección de datos, política acotada, validación de salida, timeout y aplicación mediante `model.change` fase 1.
-- `src/onboarding-v2/hermes-broker.js`: cliente HTTP sobre **socket Unix**, no escucha puertos; HMAC-SHA256 independiente del proveedor, request/response enlazados.
-- `src/onboarding-v2/server.js`: `POST /api/hermes/enrich`, journal durable de ejecuciones y generación asíncrona fuera de la cola de edición; commit serializado con revisión revalidada.
-- `public/onboarding-v2/app.js`: botón separado «Enriquecer con Hermes», confirmación explícita, estados `not-configured`, `not-run`, `in-progress`, `failed`, `real`; comparación con original/antes-después y edición humana existente. Publicar Azure sigue deshabilitado.
+El worker **comparte red** del host para HTTPS: no se afirma firewall/allowlist DNS por kernel. El endpoint está fijado en código; la instantánea jamás se evalúa como código. `/usr` contiene binarios del sistema pero no existe interfaz para que el modelo los invoque. El broker/supervisor de host sigue siendo código confiable y necesita supervisión/hardening operacional; los namespaces no aíslan ese supervisor ni protegen frente a root host comprometido. DLP por patrones y JSON Schema no prueban ausencia universal de secretos ni verdad semántica del contenido generado. Revisión humana obligatoria.
 
-El prefijo público, directorio reducido de nombres/frentes, roles y configuración SSO existentes permanecen intactos. En producción se mantiene `authMode=sso`; `local-review` solo sirve para desarrollo sintético, no prueba un login corporativo.
+## Persistencia V2 y conservación documental
 
-### Endpoint de aplicación
+`server.js` persiste reserva antes de llamar al broker; idempotencia enlazada a actor+revisión. Generación fuera de la cola de edición; commit serializado vuelve a comprobar revisión, integridad de fuente y outputHash. Edición humana concurrente prevalece: no se aplica resultado stale. Falla solo journal, nunca fases/aprobaciones. Tras restart, reserva huérfana se muestra `failed/interrupted-no-retry` sin relanzarse. V2 mantiene un único escritor; su rename no implica garantía ante pérdida de energía ni transacción distribuida.
 
-Cuerpo permitido: `{"revision":1,"executionId":"UUID-generado-por-el-cliente"}`. No acepta snapshots, prompt, tools, URL de proveedor, modelo, aprobaciones ni contenido de resultado proporcionados por el cliente.
+Fuente completa privada e inmutable en `azureIntakes`; solo campos documentales proyectados al worker. Adjuntos ya extraídos se incluyen como texto; metadata/URLs no se descargan. Propuesta nueva por `model.change` fase 1 conserva original/historial/decisiones antiguas, invalida aprobación dependiente sin renovarla y agrega preguntas bloqueantes sin respuestas. Guarda actor, modelo, runtime, fecha, source/input/output hashes, executionId, versión y output. Comparación original/antes-después y edición manual disponibles. `real` en fixtures solo significa rama de éxito del contrato; la evidencia real se identifica separadamente en QA.
 
-Requiere la sesión y RBAC V2 existentes (`editor` o `coordinator`), Origin exacto y revisión actual. `202` inicia/consulta la misma ejecución en curso; `200` devuelve una ejecución terminal ya existente; reutilizar ID con otro actor/revisión da `409`. GET de `/api/state` es privado y contiene el estado de la ejecución.
+## Ejecutables y pruebas reproducibles
 
-Una reserva se persiste **antes** de contactar al broker. No se reintenta automáticamente. Tras reinicio, un journal `in-progress` sin trabajo en memoria se presenta como `failed / interrupted-no-retry`; repetir ese ID no hace otra llamada. Una nueva ejecución requiere un nuevo ID explícito. Una sola generación activa por proceso, sin cola adicional de inferencia (`429 busy`). Journal limitado a 100 entradas, sin expulsar IDs ni reusar silenciosamente sus efectos. Se necesita archivado administrativo explícito antes de ampliar ese límite; no está implementado.
+- `src/onboarding-v2/hermes-broker-service.js`: autenticación, journal, transporte, runtime y auditoría de namespaces.
+- `scripts/stateless-codex-worker.py`: cliente mínimo sin agente, lector singleton read-only y límites del proceso.
+- `scripts/onboarding-enrichment-broker.mjs /ruta/privada/config.json`: launcher host, config propia regular 0600, owner actual, schema exacto. Sin config válida/autorización/modelo permitido no escucha. No es un servicio productivo instalado.
+- `node scripts/enrichment-synthetic-smoke.mjs --authorized-synthetic`: **consume inferencia real** con fixture biblioteca ficticia #900001; backend V2, HMAC, broker, sandbox y proveedor reales. No lanzarlo sin autorización de coste/scope.
+- `node scripts/enrichment-socket-container-smoke.mjs dashboardma-onboarding-v2:dca1278d32fbf5c69bf487e97df807887a46d1da`: runtime sintético; contenedor temporal sin red, UID/GID1000, root read-only, solo socket mount. No toca contenedor productivo ni monta credenciales.
+- `npm test`, `npm run test:hermes`, `python3 -m unittest discover -s test -p '*_test.py'`: no consumen proveedor real. Tests SSO/local-review exclusivamente sintéticos, no prueba de login corporativo.
 
-La generación no bloquea que otro cliente guarde una edición humana. Si cambia la revisión o fuente antes del commit, falla sin aplicar la propuesta. Fallos solo actualizan el journal; **no cambian fases, revisión del borrador, historial de versiones ni aprobaciones**. Un fallo de disco deja una reserva ambigua que no se reejecuta automáticamente. Se soporta un único proceso escritor de la aplicación; no se afirma exclusión distribuida entre réplicas.
+## Receta de despliegue — NO ejecutada, requiere revisión/autorización
 
-### Fuente y propuesta
+1. Revisar commit candidato limpio y evidencia QA. Autorizar explícitamente datos operativos/modelo/coste; el permiso actual solo cubrió contenido sintético. No trasladar el permiso de prueba a #3134 ni activar producción automáticamente.
+2. Respaldar volumen V2 y runtime/roles en almacenamiento privado 0700/0600 y verificar archivo restorable/manifiestos. Capturar imagen efectiva, roles, flags, montajes y las seis capas actuales; no usar el label del checkout antiguo como fuente del nuevo build. No cambiar identidades, participaciones ni sesiones.
+3. Instalar checkout inmutable del broker fuera del contenedor V2; verificar `/usr/bin/bwrap`, `/usr/bin/python3`, namespaces, rutas TLS/DNS y reader singleton read-only. Supervisar con usuario/servicio confiable autorizado para leer auth. No iniciar dashboard Hermes ni modificar/reiniciar gateways. La renovación de OAuth sigue en su propietario normal; expiración no se repara copiando pools o iniciando login desde V2.
+4. Crear journal **0700** del usuario broker y directorio socket separado **0710**, propietario broker, grupo del contenedor V2 (probado GID1000). Config 0600: `directory`, `socketDirectory`, `key` (dedicada aleatoria >=32 caracteres), `model:"gpt-6.1-sol"`, `authorized:true`. El socket se crea owner broker/grupo del directorio, **0660**. Montar solo directorio socket read-only; jamás journal, home Hermes, auth.json, Docker socket o gateways en V2. Verificar UID/GID real si hay userns-remap. Clave MAC via archivo env privado de V2 con solo `V2_HERMES_BROKER_KEY`; no OAuth/API del proveedor.
+5. Probar launcher, auditoría de aislamiento y cliente contenedor contra datos sintéticos antes de cualquier activación. Definir supervisor, límites de servicio, rotación de clave/journal, recuperación de lock y backup; no instalar un unit improvisado ni borrar sockets/locks de dueño activo. Launcher cierra socket/lock limpiamente con SIGTERM y espera hasta el deadline; socket preexistente falla cerrado.
+6. Construir desde commit limpio imagen con tag SHA completo + OCI revision. Preservar estas **seis** capas y añadir séptima `deploy/enrichment-broker.override.yml`: base `onboarding-v2.compose.yml`, `classifications.override.yml`, `public-directory.override.yml`, `staffing.override.yml`, `azure-intake.override.yml`, `classification-review.override.yml`. Mantener mismo proyecto Compose, roles y `dashboardma-onboarding-v2_onboarding-v2-data`. Flags SSO, directory público, staffing y política project/agileNestCorp sin alteraciones. Overlay nuevo requiere V2_ENRICHMENT_ENV_FILE y V2_ENRICHMENT_SOCKET_DIRECTORY; V2_ENRICHMENT_AUTHORIZED queda **false por defecto**.
+7. Solo con autorización de despliegue, recrear V2 (no legacy/gateways). Readback exacto de flags safe, volumen/roles, image revision, hashes assets, health, anónimo 401, Origin inválido 403, directorio público reducido y legacy unchanged. Login/import/generación de usuario real quedan pendientes hasta sesión corporativa y revisión humanas reales. Publicación Azure sigue deshabilitada.
 
-El snapshot completo y hash original permanecen en almacenamiento privado V2 y solo se entregan por API autenticada. El broker recibe una proyección de campos documentales: ID/revisión, título/descripción/criterios, comentarios y texto de adjuntos ya extraídos; sin identidades estructuradas, campos arbitrarios, relaciones de navegación, tokens ni archivos de configuración. No descarga URLs ni abre adjuntos. Texto Azure, incluido un intento de prompt injection, se transporta como datos, no como instrucciones ejecutables.
-
-Rechaza entradas excesivas sin truncado silencioso. Política fija: hasta 48.000 bytes de payload y 48.000 tokens de entrada como techo del contrato, 2.000 tokens de salida, 32.000 bytes de JSON de salida y 45 segundos de espera global de la inferencia, con abort de transporte. El broker debe contar tokens del prompt completo con el tokenizer del modelo y aplicar también esos límites aguas arriba: la app no dispone del tokenizer y no convierte bytes a una cuenta exacta de tokens. El parser del transporte corta respuestas de más de 40.000 bytes, incluyendo envelope. Los patrones obvios de credenciales se rechazan en entrada/salida; esto **no es una garantía universal de DLP**.
-
-Salida estricta: solamente `context`, `constraints` (texto acotado) y `questions` (máximo 12 preguntas). No puede establecer owners, título, fuentes originales, ambiente, estado QA, respuestas a bloqueos o decisiones de aprobación. Se conserva la información humana anterior y se añaden preguntas obligatorias de entorno/build y reproducción sin responder. Todo contexto IA se rotula como **propuesta no verificada**; la validación de JSON no demuestra exactitud semántica, causas ni resultados QA. Es obligatoria la revisión humana.
-
-Éxito crea versión con actor, modelo, fecha, executionId, sourceHash, inputHash, outputHash, estado `real` y output original. `sourceHash` enlaza el snapshot completo; `inputHash` es SHA-256 de `JSON.stringify(request)` sin el propio campo inputHash; `outputHash` enlaza el JSON de salida validado. `model.change` conserva versión previa e invalida aprobaciones dependientes; no crea decisiones nuevas. La IA de consistencia de fase 4 y QA software siguen **no ejecutadas**, independientes de este enriquecimiento de fase 1.
-
-## Configuración — preparada, NO aplicada
-
-Sin las cuatro condiciones se mantiene desconfigurado, sin fallback a CLI, API agente, proxy genérico ni proveedor externo:
-
-| Variable | Significado |
-|---|---|
-| `V2_HERMES_AUTHORIZED=true` | Atestación operativa explícita de aprobación de scope/proveedor/modelo/coste y auditoría del broker; no sustituye una autorización humana real. |
-| `V2_HERMES_MODEL` | Modelo fijo autorizado, no elegible desde frontend. |
-| `V2_HERMES_BROKER_SOCKET` | Ruta absoluta del socket privado de un broker especializado ya auditado. |
-| `V2_HERMES_BROKER_KEY` | Secreto dedicado de al menos 32 caracteres para MAC, **no** token OAuth/API del proveedor. Solo runtime privado. |
-
-No existe un servicio listo para activar solo cambiando estas variables. `configured=true` indica que se suministró el adapter; no es un health check de disponibilidad ni prueba de autorización. No se añadieron overlays de despliegue ni se provisionaron claves. Antes de cualquier activación hay que resolver permisos del socket entre contenedores/UID y montar exclusivamente el socket, nunca el home ni auth pools de Hermes.
-
-### Contrato pendiente del broker
-
-`POST /v1/onboarding/enrich` sobre socket Unix. Request: `{payload, mac}`, MAC hexadecimal de 64 caracteres, calculado sobre los bytes UTF-8 de `JSON.stringify(payload)`. La serialización y orden de claves deben conservarse; no es un estándar de JSON canónico interoperable. El broker debe verificar MAC con comparación constante, autorizar el único esquema y modelo, rechazar campos/políticas adicionales y conservar idempotencia propia.
-
-La respuesta también es `{payload, mac}` firmada con la clave dedicada. Payload requerido:
-
-```json
-{
-  "schema": "onboarding.hermes.result.v1",
-  "runtime": "hermes-bounded-inference-v1",
-  "executionId": "mismo-id",
-  "inputHash": "mismo-hash-entrada",
-  "sourceHash": "mismo-hash-fuente",
-  "model": "mismo-modelo-autorizado",
-  "toolsExecuted": 0,
-  "output": {"context":"propuesta","constraints":"pendientes","questions":[]}
-}
-```
-
-El marcador runtime y toolsExecuted son **atestaciones de un broker confiable, no una prueba criptográfica de aislamiento**. Antes de activarlo, su implementación debe demostrar que no instancia el loop agente, dispatcher de tools, skills, memorias, shell, fetch de URLs o carga de contexto desde fuentes. Debe usar solamente la integración Hermes/proveedor existente expresamente autorizada y soportada, sin copiar credenciales a la app, sin reenviar fallos upstream y sin loguear cuerpos. Debe imponer límites de tokens, timeout aguas arriba, una sola llamada sin retries y deduplicación incluso en restart. Nada de esto se da por implementado por disponer del adapter.
-
-## QA y evidencia
-
-Se observaron fallos RED reales por módulo/endpoint/export ausente, detección de credenciales ausente, política maxInputTokens ausente y error de almacenamiento sin sanitizar, antes de su implementación. El browser requirió esperar el bootstrap antes de enviar login; el fallo inicial de navegación se corrigió en la prueba, no fabricando respuestas del backend.
-
-Comandos de aceptación: `npm run check`, `npm run check:v2`, `npm test`, `npm run test:hermes` y `python3 -m unittest discover -s test -p '*_test.py'`. Resultados finales y rutas privadas de evidencia en `hermes-enrichment-qa.md`.
-
-Pruebas cubren auth anónima/expirada/no asignada/lector, Origin, revision stale, éxito versionado, aprobación anterior invalidada, fallo sin cambio de borrador, edición humana concurrente, idempotencia durable/restart, concurrencia/timeout, snapshot corrupto/injection, límites y datos sensibles, validación/tampering de output y MAC/binding/tamaño reales sobre socket Unix.
-
-El browser Chromium usa el **backend real** sobre socket Unix; CDP solamente puentea transporte de red y devuelve los bytes producidos por `http.Server`. No hay respuestas HTTP prefabricadas, pero el transporte de inferencia es sintético y se identifica así. Verifica generación/estados, edición humana, comparación antes/después/fuente, fallo atómico y layout móvil. No valida credenciales reales de SSO ni inferencia de un proveedor.
-
-Pendiente: implementar/auditar/autorizar broker; ejecutar inferencia acotada del piloto privado 3134 fuera de producción; revisión humana de su contenido; login corporativo real; publicación de artefacto por el responsable de despliegue. La escritura/publicación Azure es otro bloque y permanece deshabilitada.
+**Pendientes concretos:** aprobación de cambio productivo y de enviar datos operativos; provisión/supervisión segura del broker/clave dedicado, validación de namespaces bajo ese supervisor y permisos en deployment real; revisión humana semántica/SSO. Transporte entre contenedor UID1000 y host ya probado aisladamente; no se afirma desplegado. IA de consistencia fase 4, QA de software y escritura Azure son integraciones distintas no ejecutadas.

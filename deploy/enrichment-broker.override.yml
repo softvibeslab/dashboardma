@@ -1,0 +1,17 @@
+# Seventh layer: connect ONLY the dedicated Unix socket to the existing V2.
+# Host broker is separately supervised. Never mount Hermes home/auth into V2.
+services:
+  onboarding-v2:
+    env_file:
+      - ${V2_ENRICHMENT_ENV_FILE:?Private env containing ONLY V2_HERMES_BROKER_KEY required}
+    environment:
+      V2_HERMES_AUTHORIZED: ${V2_ENRICHMENT_AUTHORIZED:-false}
+      V2_HERMES_MODEL: gpt-6.1-sol
+      V2_HERMES_BROKER_SOCKET: /run/v2-enrichment/broker.sock
+    volumes:
+      - type: bind
+        source: ${V2_ENRICHMENT_SOCKET_DIRECTORY:?Dedicated socket-only directory required}
+        target: /run/v2-enrichment
+        read_only: true
+        bind:
+          create_host_path: false
