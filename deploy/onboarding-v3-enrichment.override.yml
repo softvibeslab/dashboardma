@@ -1,0 +1,11 @@
+# Opt-in only; preserve base+preview overlays, SSO, roles, catalog and data.
+services:
+  onboarding-v3:
+    env_file:
+      - ${V3_ENRICHMENT_ENV_FILE:?Private dedicated HMAC file required}
+    environment:
+      V3_HERMES_AUTHORIZED: ${V3_ENRICHMENT_AUTHORIZED:-false}
+      V3_HERMES_MODEL: gpt-6.1-sol
+      V3_HERMES_BROKER_SOCKET: /run/v3/llm/broker.sock
+    volumes:
+      - /run/dashboardma-v3-broker:/run/v3/llm:ro

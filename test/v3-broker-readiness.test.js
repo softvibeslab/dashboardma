@@ -1,0 +1,9 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {mkdtemp,rm,chmod} from 'node:fs/promises';import os from 'node:os';import path from 'node:path';import http from 'node:http';import {createHmac} from 'node:crypto';
+import {BoundedBroker,listenBroker} from '../src/onboarding-v2/hermes-broker-service.js';import {brokerTransport} from '../src/onboarding-v2/hermes-broker.js';import {HermesEnrichment} from '../src/onboarding-v2/hermes-enrichment.js';
+test('signed health requires successful live isolation and credential readiness, unsigned denied',async()=>{
+ const directory=await mkdtemp(path.join(os.tmpdir(),'v3-readiness-'));await chmod(directory,0o700);const key='synthetic-key-for-readiness-testing-only';let ready=true;
+ const runtime={audit:async()=>{if(!ready)throw Error('expired');return {isolatedPython:true,noSite:true,hostMemoriesHidden:true,hermesCodeHidden:true,readOnlyAuth:true,credentialReady:true};}};
+ const broker=await BoundedBroker.open({directory,key,model:'gpt-6.1-sol',runtime});const socketPath=path.join(directory,'broker.sock');const server=await listenBroker({broker,socketPath});
+ const request=body=>new Promise((resolve,reject)=>{const req=http.request({socketPath,path:'/v1/onboarding/health',method:'POST',headers:{'content-type':'application/json'}},res=>{res.resume();res.on('end',()=>resolve(res.statusCode));});req.on('error',reject);req.end(JSON.stringify(body));});
+ try{assert.equal(await request({}),401);const transport=brokerTransport({socketPath,key,approved:true});assert.equal(await transport.health(),true);const enrichment=new HermesEnrichment({transport,model:'gpt-6.1-sol'});assert.equal(await enrichment.available(),true);ready=false;assert.equal(await transport.health(),false);assert.equal(await enrichment.available(),false);}finally{await new Promise(r=>server.close(r));await broker.close();await rm(directory,{recursive:true,force:true});}
+});

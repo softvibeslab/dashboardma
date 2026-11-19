@@ -73,7 +73,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
      if(options.warning)pending[2].push(options.warning);
      try{staffing.assertCurrent(state.phases[2],options);}catch(e){pending[2].push(e.message);}
     }
-    return {state,actor,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,hermes:{configured:hermesEnrichment.configured(),execution:executionView(state.aiExecutions?.at(-1))||null},integrations:{ai:state.hermesEnrichments?.length?'real':'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
+    return {state,actor,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,hermes:{configured:await hermesEnrichment.available(),execution:executionView(state.aiExecutions?.at(-1))||null},integrations:{ai:state.hermesEnrichments?.length?'real':'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
    };
    if(url.pathname==='/api/staffing'){
     if(req.method!=='GET')return send(res,405,{error:'Método no permitido.'});
@@ -119,7 +119,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
      const existing=before.aiExecutions?.find(e=>e.executionId===input.executionId);
      if(existing){if(existing.revision!==input.revision||existing.actor!==actor.id)throw failure(409,'idempotency-conflict');return executionView(existing);}
      const source=assertGeneration(before,actor,input);
-     if(!hermesEnrichment.configured())throw failure(503,'not-configured');
+     if(!await hermesEnrichment.available())throw failure(503,'not-configured');
      if(running.size)throw failure(429,'busy');
      if((before.aiExecutions?.length||0)>=100)throw failure(409,'execution-ledger-full');
      const entry={executionId:input.executionId,actor:actor.id,revision:input.revision,sourceHash:source.sourceHash,model:hermesEnrichment.model,at:new Date().toISOString(),status:'in-progress'};
@@ -165,7 +165,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
   let text=await readFile(path.join(root,'public/onboarding-v3',name));
   if(name.endsWith('.html'))text=Buffer.from(text.toString().replace(/(href|src)="\/(styles\.css|app\.js|advanced\.js|advanced\.css|base\.css|wizard\.css|classifications(?:\.css|\.js)?|)"/g,(_,attr,asset)=>`${attr}="${basePath}/${asset}"`));
   res.writeHead(200,{'content-type':name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html; charset=utf-8','cache-control':'no-store'});res.end(text);
- }catch(e){if((req.url||'').split('?')[0].endsWith('/api/hermes/enrich')&&!e.status)return send(res,503,{error:'Enriquecimiento Hermes no disponible; no se modificó el borrador.'});const message=e.message||'Error';const status=e.status||(/versión|hash|bloque/.test(message)?409:/autentic|Rol |rol |asignad|responsable|destinatario/.test(message)?403:400);send(res,status,{error:message});}});
+ }catch(e){if((req.url||'').split('?')[0].endsWith('/api/hermes/enrich')&&!e.status)return send(res,503,{error:'Enriquecimiento LLM no disponible; no se modificó el borrador.'});const message=e.message||'Error';const status=e.status||(/versión|hash|bloque/.test(message)?409:/autentic|Rol |rol |asignad|responsable|destinatario/.test(message)?403:400);send(res,status,{error:message});}});
  return srv;
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){

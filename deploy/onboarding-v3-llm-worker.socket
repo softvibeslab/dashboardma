@@ -1,0 +1,13 @@
+[Unit]
+Description=Private V3 per-call sandbox socket
+[Socket]
+ListenStream=/run/dashboardma-v3-worker.sock
+Accept=yes
+SocketUser=root
+SocketGroup=dashboardma-v3-llm
+SocketMode=0660
+MaxConnections=1
+Backlog=8
+RemoveOnStop=yes
+[Install]
+WantedBy=sockets.target

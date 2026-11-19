@@ -1,0 +1,34 @@
+[Unit]
+Description=V3 fixed per-call credential-owning sandbox (not Hermes)
+
+[Service]
+Type=exec
+User=root
+Group=root
+ExecStart=/usr/bin/bwrap --unshare-all --share-net --die-with-parent --new-session --cap-drop ALL --ro-bind /usr /usr --tmpfs /usr/local --remount-ro /usr/local --ro-bind /lib /lib --ro-bind /lib64 /lib64 --dir /etc --ro-bind /etc/ssl /etc/ssl --ro-bind /etc/resolv.conf /etc/resolv.conf --ro-bind /etc/nsswitch.conf /etc/nsswitch.conf --ro-bind /etc/hosts /etc/hosts --proc /proc --dev /dev --dir /root/.hermes --ro-bind /root/.hermes/auth.json /root/.hermes/auth.json --ro-bind @RELEASE@/scripts/stateless-codex-worker.py /worker.py --clearenv --setenv LANG C.UTF-8 --chdir / -- /usr/bin/python3 -I -S /worker.py --supervised
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindReadOnlyPaths=/root/.hermes/auth.json
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectKernelLogs=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+InaccessiblePaths=-/var/lib/docker -/run/docker.sock
+RuntimeMaxSec=47
+TimeoutStopSec=2
+KillMode=control-group
+MemoryMax=384M
+TasksMax=16
+LimitCORE=0
+UMask=0077
+# Root privileges are needed by this host's AppArmor/userns policy BEFORE bwrap.
+# No interpretable client command exists. All worker capabilities drop to zero.

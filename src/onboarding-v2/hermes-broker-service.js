@@ -85,7 +85,7 @@ export async function listenBroker({broker,socketPath,socketDirectory=broker.dir
   const send=(status,body)=>{if(!res.destroyed){res.writeHead(status,{'content-type':'application/json','cache-control':'no-store','connection':'close'});res.end(JSON.stringify(body));}};
   try{
    req.setTimeout(5000,()=>req.destroy());
-   if(req.method!=='POST'||req.url!=='/v1/onboarding/enrich'){req.resume();return send(404,{error:'broker-route'});}
+   if(req.method!=='POST'||!['/v1/onboarding/enrich','/v1/onboarding/health'].includes(req.url)){req.resume();return send(404,{error:'broker-route'});}
    if(req.headers.origin||req.headers['sec-fetch-site']){req.resume();return send(403,{error:'broker-browser'});}
    if(req.headers['content-type']!=='application/json'||req.headers['content-encoding']){req.resume();return send(400,{error:'broker-content-type'});}
    let size=0;const chunks=[];
@@ -93,7 +93,7 @@ export async function listenBroker({broker,socketPath,socketDirectory=broker.dir
    // Body is complete; the broker owns the bounded inference deadline now.
    req.setTimeout(0);
    let envelope;try{envelope=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{throw denied(400,'broker-json');}
-   send(200,await broker.exchange(envelope));
+   send(200,await (req.url.endsWith('/health')?broker.health(envelope):broker.exchange(envelope)));
   }catch(e){const allowed=['broker-auth','broker-input','broker-closed','broker-runtime-poisoned','broker-busy','broker-replay-conflict','broker-terminal-no-retry','broker-journal-full','broker-output','broker-timeout','broker-json','hermes-isolated-runtime-unavailable'];send(allowed.includes(e.code)?e.status:503,{error:allowed.includes(e.code)?e.code:'broker-failed'});}
  });
  server.maxConnections=8;server.maxHeadersCount=20;server.keepAliveTimeout=1;
@@ -115,6 +115,15 @@ export class BoundedBroker {
  }
  constructor({directory,key,model,runtime=new UnavailableRuntime()}){this.directory=directory;this.key=key;this.model=model;this.runtime=runtime;this.active=false;this.closed=false;}
  async syncDirectory(){const d=await open(this.directory,'r');try{await d.sync();}finally{await d.close();}}
+ async health(envelope){
+  const {payload,mac}=envelope||{};
+  if(!exact(envelope,['payload','mac'])||typeof mac!=='string'||!/^[a-f0-9]{64}$/.test(mac)||!timingSafeEqual(Buffer.from(mac),Buffer.from(sign(this.key,payload))))throw denied(401,'broker-auth');
+  if(!exact(payload,['schema','nonce'])||payload.schema!=='onboarding.health.v1'||!/^[-a-zA-Z0-9_]{16,80}$/.test(payload.nonce))throw denied(400,'broker-input');
+  let ready=false;
+  if(!this.closed&&!this.poisoned&&!this.active){try{const audit=await this.runtime.audit();ready=['isolatedPython','noSite','hostMemoriesHidden','hermesCodeHidden','readOnlyAuth','credentialReady'].every(k=>audit[k]===true);}catch{}}
+  const result={...payload,model:this.model,ready,runtime:'stateless-llm-inference-v1'};
+  return {payload:result,mac:sign(this.key,result)};
+ }
  async close(){if(this.active)throw denied(503,'broker-busy');if(this.closed)return;this.closed=true;await this.lock.close();await unlink(path.join(this.directory,'.owner'));await this.syncDirectory();}
  async exchange(envelope){
   const {payload,mac}=envelope||{};

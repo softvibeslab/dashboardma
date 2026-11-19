@@ -18,6 +18,7 @@ function validateOutput(output){
 export class HermesEnrichment {
  constructor({transport,model='',timeoutMs=45000}={}){this.transport=transport;this.model=model;this.timeoutMs=Math.min(45000,Math.max(1,timeoutMs));this.active=false;}
  configured(){return typeof this.transport==='function'&&Boolean(this.model);}
+ async available(){return this.configured()&&(this.transport.health?await this.transport.health():true);}
  async generate(state,actor,input){
  if(!this.configured())throw failure(503,'not-configured');
  const source=assertGeneration(state,actor,input);

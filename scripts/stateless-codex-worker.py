@@ -89,6 +89,21 @@ def parse_final(response):
         raise ValueError('worker-output-limit')
     return json.loads(raw)
 
+def audit_sandbox(check_credential=False):
+    import sys
+    mounts=Path('/proc/self/mountinfo').read_text().splitlines()
+    audit={'isolatedPython':bool(sys.flags.isolated),'noSite':bool(sys.flags.no_site),
+           'hostMemoriesHidden':not Path('/root/.hermes/memories').exists() and not Path('/root/.hermes/config.yaml').exists(),
+           'hermesCodeHidden':not Path('/usr/local/lib/hermes-agent').exists(),
+           'readOnlyAuth':any(line.split()[4]=='/root/.hermes/auth.json' and 'ro' in line.split()[5].split(',') for line in mounts)}
+    if check_credential:
+        try:
+            credential()
+            audit['credentialReady']=True
+        except Exception:
+            audit['credentialReady']=False
+    return audit
+
 def main():
     import resource
     import signal
@@ -98,17 +113,19 @@ def main():
         resource.setrlimit(limit,(value,value))
     signal.alarm(44)
     if sys.argv[1:]==['--audit-sandbox']:
-        mounts=Path('/proc/self/mountinfo').read_text().splitlines()
-        audit={'isolatedPython':bool(sys.flags.isolated),'noSite':bool(sys.flags.no_site),
-               'hostMemoriesHidden':not Path('/root/.hermes/memories').exists() and not Path('/root/.hermes/config.yaml').exists(),
-               'hermesCodeHidden':not Path('/usr/local/lib/hermes-agent').exists(),
-               'readOnlyAuth':any(line.split()[4]=='/root/.hermes/auth.json' and 'ro' in line.split()[5].split(',') for line in mounts)}
+        audit=audit_sandbox()
         print(json.dumps(audit))
         return 0 if all(audit.values()) else 2
     try:
         raw=sys.stdin.buffer.read(48001)
         if len(raw)>48000: raise ValueError()
         payload=json.loads(raw)
+        if sys.argv[1:]==['--supervised'] and payload=={'auditSandbox':True}:
+            audit=audit_sandbox(check_credential=True)
+            print(json.dumps(audit))
+            return 0 if all(audit.values()) else 2
+        if sys.argv[1:]==['--supervised'] and not all(audit_sandbox(check_credential=True).values()):
+            raise ValueError()
         if payload.get('schema')!='onboarding.hermes.bounded.v1' or payload.get('model')!=MODEL:
             raise ValueError()
         build_request(payload)

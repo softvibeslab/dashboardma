@@ -1,0 +1,44 @@
+[Unit]
+Description=V3 credential-free signed LLM broker
+Requires=dashboardma-v3-worker.socket
+After=dashboardma-v3-worker.socket
+StartLimitIntervalSec=300
+StartLimitBurst=3
+[Service]
+Type=exec
+User=dashboardma-v3-llm
+Group=dashboardma-v3-llm
+SupplementaryGroups=dashboardma-v3-web
+ExecStart=/usr/local/bin/node @RELEASE@/scripts/onboarding-v3-broker.mjs /etc/dashboardma-v3-llm/config.json
+WorkingDirectory=/
+Environment=TMPDIR=/run/dashboardma-v3-broker
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/var/lib/dashboardma-v3-llm /run/dashboardma-v3-broker
+InaccessiblePaths=-/var/lib/docker -/run/docker.sock
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryMax=256M
+TasksMax=32
+LimitNOFILE=64
+LimitCORE=0
+UMask=0077
+TimeoutStopSec=55
+KillMode=control-group
+Restart=on-failure
+RestartSec=10
+[Install]
+WantedBy=multi-user.target
