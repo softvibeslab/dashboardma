@@ -15,10 +15,10 @@ ProtectHome=tmpfs
 BindReadOnlyPaths=/root/.hermes/auth.json
 PrivateTmp=yes
 PrivateDevices=yes
-ProtectKernelTunables=yes
+# Do not add systemd proc submount masks here: Linux forbids creating the
+# worker's new PID-namespace proc under a masked parent proc. bwrap creates a
+# fresh isolated proc and hides host sysfs/cgroup entirely instead.
 ProtectKernelModules=yes
-ProtectControlGroups=yes
-ProtectKernelLogs=yes
 RestrictRealtime=yes
 LockPersonality=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK

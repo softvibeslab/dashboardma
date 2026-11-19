@@ -20,6 +20,14 @@ On crash do not unlink socket/owner lock automatically. Stop dedicated broker an
 
 ## Verification evidence
 
+## Imported context and CP0–CP3 UX
+
+The visible action is named **Enriquecer con Hermes**, immediately below the imported source/resource panel and before questions/proposal. Its adjacent disclosure states direct controlled LLM, not Hermes agent execution. The button stays visible when disabled and explains role/import/readiness/running gates. Context previews escape Azure text, bound long values and distinguish original-only fields from the exact projected model context, partial comments, child failures, extracted text and metadata-only/unsupported attachments. No raw snapshot dump is expanded by default. Original private snapshot remains independently inspectable and immutable.
+
+CP vocabulary is grounded in `public/dashboard/app.js:1–5`: CP0 Reportado Azure (intake/backlog), CP1 Análisis (reglas/criterios), CP2 Spec (arquitectura/QA), CP3 Dev (ramas/PR/unitarias), consistent with `docs/cp/azure-repo-cli/CP0-intake.md` and CP1's proposed CP2 handoff. The UI shows these as a reference rail, not new aliases for seven documentary phases or automatic CP approval. Existing CP0/CP1 enrichment skill guides human readiness; this bounded context/constraints/questions JSON output does not claim a complete CP0/CP1 artifact pack, technical SPEC or development execution. Those remain human-reviewed downstream artifacts.
+
+Helper proc hardening: systemd's masked `/proc` submounts prevent Linux from creating the mandatory fresh PID-namespace `/proc` (`Can't mount proc ... Operation not permitted`). The helper therefore does not inherit `ProtectKernelTunables/ProtectKernelLogs/ProtectControlGroups` proc submount masks: bwrap supplies a fresh isolated proc and exposes neither host sysfs nor cgroup tree. Broker keeps those protections. Worker isolation was not removed to pass the probe.
+
 Automated synthetic tests cover fixed worker transport, missing socket, signed/unsigned readiness, strict output/provenance, bounded context/output, timeout, duplicate and revision/source race. Existing Chromium suites preserve seven phases, desktop/mobile manual editing and unavailable-LLM UI. An opt-in synthetic paid smoke must record actual provider usage separately from fixtures labeled `real`.
 
 Private release readbacks, real synthetic output, exact image/container/health, service properties, public asset hashes, anonymous401/Origin403 and before/after preservation manifests are retained outside Git. Production corporate SSO and semantic approval are not fabricated by these tests. Operational snapshots are never automatically imported/enriched, and Azure writes remain disabled.

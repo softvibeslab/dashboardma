@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,rm,mkdir,chmod,stat} from 'node:fs/promises';
+import {mkdtemp,rm,mkdir,chmod,stat,readFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {createHmac,createHash} from 'node:crypto';
@@ -33,7 +33,9 @@ test('rejects altered policy, schema, hash, model and snapshot before runtime',a
 });
 test('durable reservation prevents retries across restart and conflicting replay',async t=>{
  let calls=0;const {broker,dir}=await setup(t,async()=>{calls++;return {context:'Propuesta',constraints:'Pendiente',questions:[]};});
+ broker.runtime.lastUsage={input_tokens:20,output_tokens:10,total_tokens:30,ignored:'not-stored'};
  const p=request();const envelope={payload:p,mac:sign(p)};const first=await broker.exchange(envelope);
+ assert.deepEqual(JSON.parse(await readFile(path.join(dir,p.executionId+'.json'),'utf8')).usage,{input_tokens:20,output_tokens:10,total_tokens:30});
  assert.deepEqual(await broker.exchange(envelope),first);assert.equal(calls,1);
  await assert.rejects(BoundedBroker.open({directory:dir,key,model:p.model}),e=>e.code==='broker-directory-locked');
  await broker.close();const restarted=await BoundedBroker.open({directory:dir,key,model:p.model,runtime:{execute(){throw Error('must not run');}}});

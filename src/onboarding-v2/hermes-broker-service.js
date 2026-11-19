@@ -152,7 +152,8 @@ export class BoundedBroker {
    finally{clearTimeout(timer);}
    const result={schema:'onboarding.hermes.result.v1',runtime:'stateless-llm-inference-v1',executionId:payload.executionId,inputHash:payload.inputHash,sourceHash:payload.sourceHash,model:this.model,toolsExecuted:0,output};
    const temp=file+'.'+randomUUID()+'.tmp';const handle=await open(temp,'wx',0o600);
-   try{await handle.writeFile(JSON.stringify({status:'completed',inputHash:payload.inputHash,result}));await handle.sync();}finally{await handle.close();}
+   const usage=Object.fromEntries(['input_tokens','output_tokens','total_tokens'].filter(k=>Number.isSafeInteger(this.runtime.lastUsage?.[k])&&this.runtime.lastUsage[k]>=0).map(k=>[k,this.runtime.lastUsage[k]]));
+   try{await handle.writeFile(JSON.stringify({status:'completed',inputHash:payload.inputHash,result,usage}));await handle.sync();}finally{await handle.close();}
    await rename(temp,file);await this.syncDirectory();
    return {payload:result,mac:sign(this.key,result)};
   }catch(e){this.lastFailure=/^[a-z-]{1,80}$/.test(e.code||'')?e.code:'broker-failed';throw e;}finally{this.active=false;}

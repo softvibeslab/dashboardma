@@ -5,6 +5,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {SupervisedSocketRuntime} from '../src/onboarding-v3/supervised-runtime.js';
+
 test('supervised runtime uses fixed private socket and requires complete isolation audit',async()=>{
  const d=await mkdtemp(path.join(os.tmpdir(),'v3-worker-test-'));const socketPath=path.join(d,'worker.sock');
  const seen=[];const server=net.createServer(s=>{const b=[];s.on('data',c=>b.push(c));s.on('end',()=>{const p=JSON.parse(Buffer.concat(b));seen.push(p);s.end(JSON.stringify(p.auditSandbox?{isolatedPython:true,noSite:true,hostMemoriesHidden:true,hermesCodeHidden:true,readOnlyAuth:true,credentialReady:true}:{output:{context:'synthetic',constraints:'review',questions:[]},usage:{output_tokens:8}}));});});

@@ -97,6 +97,9 @@ def audit_sandbox(check_credential=False):
            'hermesCodeHidden':not Path('/usr/local/lib/hermes-agent').exists(),
            'readOnlyAuth':any(line.split()[4]=='/root/.hermes/auth.json' and 'ro' in line.split()[5].split(',') for line in mounts)}
     if check_credential:
+        status=Path('/proc/self/status').read_text().splitlines()
+        audit['workerCapabilitiesDropped']=any(line.startswith('CapEff:') and int(line.split()[1],16)==0 for line in status)
+        audit['hostWorkspaceHidden']=not Path('/root/workspaces').exists() and not Path('/var/lib/docker').exists() and not Path('/app/data').exists()
         try:
             credential()
             audit['credentialReady']=True
