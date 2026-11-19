@@ -28,6 +28,9 @@ test('V3 advanced Etapa 2 real browser+backend: filtered candidates, persistence
    const input=(selector,value)=>{const e=q(selector);check(e,'Missing '+selector);e.value=value;e.dispatchEvent(new Event('input',{bubbles:true}));};
    const set=(path,v)=>input('[data-path="'+path+'"]',v);
    input('#token','synthetic-staffing-owner-only');el('loginForm').requestSubmit();await wait(()=>!el('workspace').hidden);
+   check(document.body.classList.contains('onboarding'),'V1 onboarding visual shell');
+   check(!!q('.sidebar .brand-block')&&!!q('.wizard-layout .stage-rail'),'V1 sidebar and phase rail');
+   for(let p=2;p<=7;p++){q('[data-phase="'+p+'"]').click();check(!!q('.stage-heading .stage-number')&&q('.stage-number').textContent===String(p),'V1 phase heading '+p);check(q('#phase').textContent.includes(['','','Frentes de entrega','Secciones e índice','Hallazgos documentales','Casos y ejecuciones','Objetos y decisiones','Paquete y recepción'][p]),'Phase-specific surface '+p);}
    q('[data-phase="2"]').click();q('[data-add="fronts"]').click();
    set('fronts.0.id','F1');set('fronts.0.deliverable','AAR de prueba');set('fronts.0.repository','https://example.test/repo');set('fronts.0.area','Área de prueba');set('fronts.0.contract','Contrato sintético');
    set('fronts.0.catalogFrontId','C1');set('fronts.0.project','P1');
@@ -50,6 +53,17 @@ test('V3 advanced Etapa 2 real browser+backend: filtered candidates, persistence
    window.confirm=()=>true;el('reload').click();await wait(()=>q('[data-path="fronts.0.project"]')?.value==='P1');
    check(document.documentElement.scrollWidth<=innerWidth,'Desktop overflow');return 'PASS';
   })()`);assert.equal(result,'PASS');
+  for(const p of [2,3,4,5,6,7]){
+   await evaluate(`document.querySelector('[data-phase="${p}"]').click()`);
+   if([3,4,5,7].includes(p))assert.equal(await evaluate(`(async()=>{const p=${p},el=id=>document.getElementById(id),q=s=>document.querySelector(s),pause=()=>new Promise(r=>setTimeout(r,30));const field={3:'sections',4:'notes',5:'plan',7:'instructions'}[p];if(p===3){q('[data-add="sections"]').click();}const e=q('[data-path="'+(p===3?'sections.0.body':field)+'"]');e.value='TEST ONLY phase '+p;e.dispatchEvent(new Event('input',{bubbles:true}));const before=el('revisionStatus').textContent;el('editor').requestSubmit();for(let i=0;i<100&&el('revisionStatus').textContent===before;i++)await pause();if(el('revisionStatus').textContent===before)throw Error('save failed '+p);el('reload').click();for(let i=0;i<100;i++){const s=await(await fetch('${base}/api/state')).json();if((p===3?s.state.phases[p].sections[0].body:s.state.phases[p][field])==='TEST ONLY phase '+p)return 'PASS';await pause();}throw Error('Persistence phase '+p);})()`),'PASS');
+   for(const [label,width,height] of [['desktop',1440,1000],['mobile',390,844]]){
+    await cdp('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width===390},sessionId);
+    await evaluate('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
+    assert.ok(await evaluate('innerWidth==='+width+'&&document.documentElement.scrollWidth<=innerWidth'),'Phase '+p+' '+label+' overflow');
+    await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false},sessionId).then(r=>writeFile(join(f.dir,`phase-${p}-${label}.png`),Buffer.from(r.data,'base64')));
+   }
+  }
+  await cdp('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false},sessionId);await evaluate(`document.querySelector('[data-phase="2"]').click()`);
   await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false},sessionId).then(r=>writeFile(join(f.dir,'desktop.png'),Buffer.from(r.data,'base64')));
   await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true},sessionId);assert.ok(await evaluate('document.documentElement.scrollWidth<=innerWidth'),'Mobile overflow');
   await cdp('Page.captureScreenshot',{format:'png',captureBeyondViewport:false},sessionId).then(r=>writeFile(join(f.dir,'mobile.png'),Buffer.from(r.data,'base64')));

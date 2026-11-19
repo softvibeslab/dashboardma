@@ -1,0 +1,23 @@
+# Authorized isolated HTTPS preview. No host ports or changes to V1/V2.
+services:
+  onboarding-v3:
+    restart: unless-stopped
+    environment:
+      V3_CATALOG_SOURCE_FILE: /run/v3/source/catalog.json
+      V3_AZURE_DIRECTORY_FILE: /run/v3/source/azure-directory.json
+    volumes:
+      - ${V3_SOURCE_DIR:?Private sanitized source required}:/run/v3/source:ro
+    networks: [coolify]
+    labels:
+      traefik.enable: 'true'
+      traefik.docker.network: coolify
+      traefik.http.routers.dashboardma-onboarding-v3.rule: 'Host(`iamobilityappsinc.com`) && (Path(`/dashboard/onboarding-v3`) || PathPrefix(`/dashboard/onboarding-v3/`))'
+      traefik.http.routers.dashboardma-onboarding-v3.priority: '12000'
+      traefik.http.routers.dashboardma-onboarding-v3.entrypoints: https
+      traefik.http.routers.dashboardma-onboarding-v3.tls: 'true'
+      traefik.http.routers.dashboardma-onboarding-v3.tls.certresolver: letsencrypt
+      traefik.http.routers.dashboardma-onboarding-v3.service: dashboardma-onboarding-v3
+      traefik.http.services.dashboardma-onboarding-v3.loadbalancer.server.port: '4193'
+networks:
+  coolify:
+    external: true
