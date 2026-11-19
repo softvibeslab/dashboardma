@@ -1,0 +1,48 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
+import path from 'node:path';
+import {createV3Server} from '../src/onboarding-v3/server.js';
+import {initial} from '../src/onboarding-v2/model.js';
+test('V3 continuity actual-backend Chromium: questions -> exact review -> manual-preserving SPEC -> honest CP3 desktop/mobile',{timeout:60000},async()=>{
+ const dir=await mkdtemp(path.join(process.env.TMPDIR,'v3-continuity-browser-')),dataFile=path.join(dir,'state.json'),s=initial();
+ s.revision=1;s.phases[1]={title:'Synthetic continuity story',owner:'owner',context:'Synthetic workflow scope',constraints:'No automatic development',sources:[],questions:[{id:'Q1',question:'What environment is required?',owner:'owner',blocking:true,answer:'QA fixture',rationale:'Synthetic workshop decision'}]};s.phases[4].reviewer='reviewer';s.phases[3]={sections:[{id:'MANUAL',front:'shared',title:'Existing manual spec',body:'Preserved synthetic manual text'}],criteria:[]};
+ await writeFile(dataFile,JSON.stringify(s));const users=[{id:'owner',roles:['coordinator','editor'],token:'synthetic-flow-owner-token'},{id:'reviewer',roles:['reviewer'],token:'synthetic-flow-reviewer-token'}];
+ const server=createV3Server({authMode:'local-review',users,dataFile,staffingRequired:false});await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}/dashboard/onboarding-v3`;
+ const browser=spawn('chromium',['--headless','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-zygote',`--user-data-dir=${path.join(dir,'profile')}`,'--remote-debugging-pipe'],{stdio:['ignore','ignore','ignore','pipe','pipe']});
+ let seq=0,buffer='';const pending=new Map(),errors=[];
+ browser.stdio[4].on('data',c=>{buffer+=c;let i;while((i=buffer.indexOf('\0'))>=0){const p=JSON.parse(buffer.slice(0,i));buffer=buffer.slice(i+1);if(p.method==='Runtime.exceptionThrown')errors.push(p.params.exceptionDetails.text);pending.get(p.id)?.(p);pending.delete(p.id);}});
+ const cdp=async(method,params={},sessionId)=>{const id=++seq,p=new Promise(r=>pending.set(id,r));browser.stdio[3].write(JSON.stringify({id,method,params,sessionId})+'\0');const r=await p;if(r.error)throw Error(JSON.stringify(r.error));return r.result;};
+ try{
+ const {targetId}=await cdp('Target.createTarget',{url:base+'/'}),{sessionId}=await cdp('Target.attachToTarget',{targetId,flatten:true});
+ const ev=async expression=>{const r=await cdp('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true},sessionId);if(r.exceptionDetails)throw Error(r.exceptionDetails.exception?.description||r.exceptionDetails.text);return r.result?.value;};
+ await cdp('Runtime.enable',{},sessionId);await cdp('Page.enable',{},sessionId);await cdp('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false},sessionId);
+ const wait=async expr=>{for(let i=0;i<150;i++){if(await ev(expr))return;await new Promise(r=>setTimeout(r,40));}throw Error('Timeout '+expr);};
+ await cdp('Page.navigate',{url:base+'/'},sessionId);
+ await wait('!!document.getElementById("loginForm")');
+ await ev(`fetch('${base}/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'synthetic-flow-owner-token'})})`);await cdp('Page.reload',{},sessionId);
+ await wait('!document.getElementById("workspace")?.hidden');
+ assert.equal(await ev('!!document.getElementById("continuity")'),true,'Next-step panel missing');
+ assert.equal(await ev('document.getElementById("contextReview").disabled'),true,'Coordinator must not approve');
+ assert.equal(await ev('document.getElementById("prepareSpec").disabled'),true,'Exact review missing');
+ await ev(`document.querySelector('[data-flow-questions]').click()`);assert.equal(await ev(`document.activeElement.hasAttribute('data-answer')`),true);
+ await ev(`fetch('${base}/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'synthetic-flow-reviewer-token'})})`);await cdp('Page.reload',{},sessionId);await wait('document.getElementById("contextReview")&&!document.getElementById("contextReview").disabled');
+ await ev('window.confirm=()=>true;document.getElementById("contextReview").click()');await wait('document.getElementById("continuity").textContent.includes("Revisado")');
+ await ev(`fetch('${base}/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'synthetic-flow-owner-token'})})`);await cdp('Page.reload',{},sessionId);await wait('document.getElementById("prepareSpec")&&!document.getElementById("prepareSpec").disabled');
+ await ev('window.confirm=()=>true;document.getElementById("prepareSpec").click()');await wait('document.getElementById("continuity").textContent.includes("Generado")');
+ await ev('document.getElementById("continuity").scrollIntoView({behavior:"instant",block:"start"})');
+ await cdp('Page.captureScreenshot',{format:'png'},sessionId).then(r=>writeFile(path.join(dir,'desktop.png'),Buffer.from(r.data,'base64')));
+ await ev(`sessionStorage.setItem('v3-phase','3');location.assign('${base}/advanced')`);await wait(`document.querySelector('[data-path="sections.0.body"]')`);
+ assert.equal(await ev(`document.getElementById('continuity').textContent.includes('Generado')`),true);
+ assert.equal(await ev(`document.querySelector('[data-path="sections.0.body"]').value.includes('Synthetic workflow scope')`),true);
+ assert.equal(await ev(`document.getElementById('continuity').textContent.includes('Dev no ejecutado')`),true);
+ await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true},sessionId);await ev('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
+ assert.equal(await ev('innerWidth'),390);assert.equal(await ev('document.documentElement.scrollWidth<=innerWidth'),true);
+ await ev('document.getElementById("continuity").scrollIntoView({behavior:"instant",block:"start"})');await cdp('Page.captureScreenshot',{format:'png'},sessionId).then(r=>writeFile(path.join(dir,'mobile.png'),Buffer.from(r.data,'base64')));
+ await ev(`fetch('${base}/api/action',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'save',phase:1,revision:3,data:{...${JSON.stringify(s.phases[1])},context:'Changed fixture scope'}})})`);
+ await cdp('Page.reload',{},sessionId);await wait('document.getElementById("continuity")?.textContent.includes("Pendiente")');
+ const stored=JSON.parse(await readFile(dataFile,'utf8'));assert.equal(stored.revision,4);assert.equal(stored.history[0].phases[3].sections[0].body,'Preserved synthetic manual text');assert.equal(stored.contextReviews.length,1);assert.equal(stored.decisions.length,0);assert.equal(stored.specDrafts.length,1);assert.deepEqual(errors,[]);
+ console.log('Continuity synthetic screenshots:',dir);
+ }finally{browser.kill('SIGTERM');await new Promise(r=>{if(browser.exitCode!==null)return r();browser.once('exit',r);});await new Promise(r=>server.close(r));await rm(path.join(dir,'profile'),{recursive:true,force:true,maxRetries:5,retryDelay:100});}
+});

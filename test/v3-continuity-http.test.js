@@ -1,0 +1,35 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,writeFile,readFile,rm} from 'node:fs/promises';
+import path from 'node:path';
+import {createV3Server} from '../src/onboarding-v3/server.js';
+import {initial} from '../src/onboarding-v2/model.js';
+const users=[{id:'owner',roles:['editor','coordinator'],token:'synthetic-continuity-owner'},{id:'reviewer',roles:['reviewer'],token:'synthetic-continuity-reviewer'}];
+test('V3 HTTP continuity RBAC, hash409, questions409, no autoaccept and preserved source/manual drafts',{timeout:15000},async()=>{
+ const dir=await mkdtemp(path.join(process.env.TMPDIR,'v3-flow-')),dataFile=path.join(dir,'state.json');
+ const s=initial();s.revision=1;s.phases[1]={title:'Synthetic',owner:'owner',context:'Scope',sources:[],questions:[{id:'Q1',question:'Environment?',owner:'owner',blocking:true,answer:'',rationale:''}]};s.phases[4].reviewer='reviewer';s.phases[3]={sections:[{id:'MANUAL',title:'Manual',front:'shared',body:'Keep me'}],criteria:[]};s.azureIntakes=[{sourceHash:'synthetic-source-hash',snapshot:{root:{id:17,rev:2}},at:'synthetic'}];
+ await writeFile(dataFile,JSON.stringify(s));const server=createV3Server({authMode:'local-review',dataFile,users,staffingRequired:false});await new Promise(r=>server.listen(path.join(dir,'http.sock'),r));
+ const {request}=await import('node:http');
+ const call=(route,body,cookie='',origin='http://fixture')=>new Promise((resolve,reject)=>{const req=request({socketPath:path.join(dir,'http.sock'),path:'/dashboard/onboarding-v3'+route,method:body?'POST':'GET',headers:{host:'fixture',origin,cookie,'content-type':'application/json'}},res=>{let raw='';res.on('data',c=>raw+=c);res.on('end',()=>resolve({status:res.statusCode,body:JSON.parse(raw),cookie:res.headers['set-cookie']?.[0].split(';')[0]}));});req.on('error',reject);req.end(body?JSON.stringify(body):undefined);});
+ try{
+ assert.equal((await call('/api/action',{type:'review-context',revision:1})).status,401);
+ assert.equal((await call('/api/action',{type:'review-context',revision:1},'','http://evil')).status,403);
+ const owner=(await call('/api/login',{token:users[0].token})).cookie,reviewer=(await call('/api/login',{token:users[1].token})).cookie;
+ let v=(await call('/api/state',null,owner)).body;assert.equal(v.continuity?.review.status,'Pendiente');
+ const action=(cookie,a)=>call('/api/action',{revision:v.state.revision,...a},cookie);
+ assert.equal((await action(owner,{type:'review-context',hash:v.continuity.contextHash})).status,403);
+ assert.equal((await action(reviewer,{type:'review-context',hash:v.continuity.contextHash})).status,409);
+ assert.equal((await action(owner,{type:'prepare-spec'})).status,409);
+ v=(await action(owner,{type:'save',phase:1,data:{...s.phases[1],questions:[{...s.phases[1].questions[0],answer:'QA',rationale:'Synthetic evidence'}]}})).body;
+ assert.equal((await action(reviewer,{type:'review-context',hash:'stale'})).status,409);
+ let result=await action(reviewer,{type:'review-context',hash:v.continuity.contextHash});assert.equal(result.status,200);v=result.body;
+ assert.equal(v.continuity.review.status,'Revisado');assert.equal(v.state.phases[3].sections[0].id,'MANUAL');
+ assert.equal((await action(reviewer,{type:'prepare-spec',confirmReplace:true})).status,403);
+ assert.equal((await action(owner,{type:'prepare-spec'})).status,409);
+ result=await action(owner,{type:'prepare-spec',confirmReplace:true});assert.equal(result.status,200);v=result.body;
+ assert.equal(v.continuity.spec.status,'Generado');assert.equal(v.continuity.handoff.ready,false);
+ assert.deepEqual(v.state.azureIntakes,s.azureIntakes);assert.equal(v.state.decisions.length,0);assert.equal(v.state.history.at(-1).phases[3].sections[0].body,'Keep me');
+ const stored=JSON.parse(await readFile(dataFile,'utf8'));assert.equal(stored.specDrafts.length,1);
+ assert.equal((await action(owner,{type:'prepare-spec',revision:1,confirmReplace:true})).status,409);
+ }finally{await new Promise(r=>server.close(r));await rm(dir,{recursive:true,force:true});}
+});

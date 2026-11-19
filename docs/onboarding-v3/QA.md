@@ -1,4 +1,6 @@
-# QA V3 — candidato probado, NO publicado
+# QA V3 — registro histórico del candidato inicial
+
+Estado y evidencia del incremento actual: [continuity-release.md](continuity-release.md). Las cifras/límites de abajo pertenecen al candidato inicial, no al runtime actual.
 
 ## Resultados ejecutados
 - `npm run check`, `npm run check:v2`, `npm run check:v3`: éxito.

@@ -1,4 +1,6 @@
-# Candidato Docker V3 — NO desplegar todavía
+# Docker V3 — receta histórica del candidato inicial
+
+V3 ya está publicado de forma aislada. Esta sección histórica no es el procedimiento vigente: usar base+preview+enrichment, no solo base. Ver [supervised-enrichment.md](supervised-enrichment.md) y [continuity-release.md](continuity-release.md).
 
 ## Construir desde revisión limpia
 ```

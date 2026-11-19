@@ -1,5 +1,7 @@
 # Ejecución y configuración V3
 
+Continuidad preguntas → revisión exacta → plantilla SPEC → checklist de entrega: [continuity-release.md](continuity-release.md). No hay nuevas concesiones RBAC ni aprobaciones automáticas.
+
 Requiere Node ≥20, sin dependencias npm. `npm run start:v3` arranca con SSO por defecto y falla si falta `SESSION_SECRET`: no hay bypass para facilitar pruebas.
 
 ## Variables privadas V3

@@ -1,4 +1,5 @@
 import {renderImportedContext} from './imported-context.js';
+import {mountContinuity} from './continuity.js';
 const $=id=>document.getElementById(id);
 const base=new URL('.',import.meta.url).pathname.replace(/\/$/,'');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -25,6 +26,8 @@ function render(){
  if(!view.identities.some(u=>u.id===draft.owner))$('owner').add(new Option(draft.owner,draft.owner,true,true));
  for(const k of ['title','context','constraints'])$(k).value=draft[k]||'';
  questions();
+ let flowHost=$('continuityHost');if(!flowHost){flowHost=document.createElement('div');flowHost.id='continuityHost';$('draftForm').before(flowHost);}
+ mountContinuity({view,host:flowHost,api,onChange:load,isDirty:()=>dirty,onError:s=>notice(s,true),onQuestions:()=>{$('questions').scrollIntoView({behavior:'instant',block:'start'});$('questions').querySelector('textarea')?.focus({preventScroll:true});}});
  $('saveHint').textContent='Cambios guardados · v'+view.state.revision;
  $('draftForm').querySelectorAll('input,select,textarea,button').forEach(e=>e.disabled=!canEdit());
  $('enrich').disabled=!canEdit()||!view.hermes?.configured||!view.state.azureIntakes?.length||view.hermes.execution?.status==='in-progress';

@@ -1,5 +1,7 @@
 # V3 HTTPS preview release — seven-phase adaptation
 
+Historical initial-preview baseline. Supervised LLM was subsequently authorized/configured (not invoked on production snapshots); see [supervised-enrichment.md](supervised-enrichment.md). Current continuity increment and explicit readiness limits: [continuity-release.md](continuity-release.md). Preserve all three Compose layers.
+
 ## Scope
 V1 visual shell, sidebar, numbered phase rail, phase headings and responsive panels are now shared by all seven stages. Phase 1 remains questions-first with original snapshot collapsed. Phases 2–7 retain the exact V2 model/server gates: governed front selection, navigable specs and criteria, documentary findings and independent review, test planning vs declared software execution, exact-hash decisions, structured package/receipt. Navigation to phase 1 returns to the questions-first entry, not the inherited editor.
 
