@@ -12,10 +12,10 @@ test('V3 V1 journey: search select import, visible questions, answer save reload
  assert.equal(spawnSync('chromium',['--version']).status,0,'Chromium required');
  const f=await staffingFixture();let reads=0;
  const connector=new AzureIntake({token:'synthetic-only',importPolicy:'project',allowedProject:'agileNestCorp',fetcher:async url=>{
- reads++;const u=new URL(url);if(u.pathname.endsWith('/wiql'))return Response.json({workItems:[{id:17}]});
- if(u.pathname.endsWith('/workitems'))return Response.json({value:[{id:17,fields:{'System.TeamProject':'agileNestCorp','System.Title':'Synthetic V3 title','System.WorkItemType':'User Story','System.State':'New'}}]});
+ reads++;const u=new URL(url);if(u.pathname.endsWith('/wiql'))return Response.json({workItems:[{id:2796}]});
+ if(u.pathname.endsWith('/workitems'))return Response.json({value:[{id:2796,fields:{'System.TeamProject':'agileNestCorp','System.Title':'Synthetic V3 title','System.WorkItemType':'User Story','System.State':'New'}}]});
  if(u.pathname.endsWith('/comments'))return Response.json({comments:[{id:1,version:2,text:'Synthetic comment'}]});
- return Response.json({id:17,rev:3,fields:{'System.TeamProject':'agileNestCorp','System.Title':'Synthetic V3 title','System.Description':'Original <img src=x onerror=alert(1)>'+('long context '.repeat(500)),'Custom.Field':'preserved'},relations:[]});
+ return Response.json({id:2796,rev:3,fields:{'System.TeamProject':'agileNestCorp','System.Title':'Synthetic V3 title','System.Description':'Original <img src=x onerror=alert(1)>'+('long context '.repeat(500)),'Custom.Field':'preserved'},relations:[]});
  }});
  const enrichment=new HermesEnrichment();
  const server=createV3Server({authMode:'local-review',dataFile:path.join(f.dir,'state.json'),catalogSourceFile:f.file,directoryFile:f.source,users:f.identities.map(u=>({...u,token:'synthetic-v3-'+u.id+'-token'})),azureIntake:connector,hermesEnrichment:enrichment});
@@ -33,9 +33,23 @@ test('V3 V1 journey: search select import, visible questions, answer save reload
  const el=id=>document.getElementById(id),q=s=>document.querySelector(s),pause=()=>new Promise(r=>setTimeout(r,30)),check=(v,m)=>{if(!v)throw Error(m);};
  const wait=async fn=>{for(let i=0;i<180;i++){if(fn())return;await pause();}throw Error('Timeout: '+el('message').textContent);};
  el('token').value='synthetic-v3-owner-token';el('loginForm').requestSubmit();await wait(()=>!el('workspace').hidden);
- el('intake').open=true;el('azureQuery').value='Synthetic';el('azureSearchForm').requestSubmit();await wait(()=>q('[data-select]'));check(el('requirementMeta').textContent.includes('v0'),'Search must not import');
- q('[data-select]').click();check(q('[data-import]'),'Explicit selection before import');window.confirm=()=>true;q('[data-import]').click();await wait(()=>el('requirementMeta').textContent.includes('v1'));
- check(!el('intake').open,'Intake collapses after import');check(el('enrich').textContent==='Enriquecer con Hermes','Explicit user action');check(el('importedContext').textContent.includes('#17'),'Imported context visible');check(el('contextResources').textContent.includes('Comentarios'),'Resources visible');check(el('importedContext').compareDocumentPosition(el('questions'))&Node.DOCUMENT_POSITION_FOLLOWING,'Context before questions');check(el('importedContext').getBoundingClientRect().top<innerHeight,'Imported context in viewport');check(!el('enrich').hidden,'Disabled button remains visible');check(el('ecosystemRail').textContent.includes('CP3'),'Ecosystem rail');check(q('[data-answer]'),'Questions visible');check(!q('#original img'),'Source escaped');check(el('original').textContent.includes('preserved'),'Original preserved');check(el('enrich').disabled,'No broker fails closed');
+ el('intake').open=true;el('azureQuery').value='2796';el('azureSearchForm').requestSubmit();await wait(()=>q('[data-select]'));check(el('requirementMeta').textContent.includes('v0'),'Search must not import');
+ q('[data-select]').click();check(q('#azureSelection')?.textContent.includes('Seleccionado · no importado'),'Selection has explicit pending status');check(q('#azureSelection a')?.href==='https://dev.azure.com/MobileappsAmerica/agileNestCorp/_workitems/edit/2796','Selected link visible');check(q('#azureResults a')?.textContent.includes('Abrir en Azure'),'Result link visible');check(q('#azureResults a')?.target==='_blank'&&q('#azureResults a')?.rel==='noopener noreferrer','Safe external link');check(q('[data-import]'),'Explicit selection before import');el('azureSelection').scrollIntoView({block:'center',behavior:'instant'});return 'SELECTED';})()`),'SELECTED');
+ for(const [label,width,height] of [['desktop',1440,1000],['mobile',390,844]]){
+  await cdp('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width===390},sessionId);
+  await ev(`new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))`);
+  assert.ok(await ev(`innerWidth===${width}&&document.documentElement.scrollWidth<=innerWidth`),'Selection '+label+' overflow');
+  await ev(`document.getElementById('azureSelection').scrollIntoView({block:'center',behavior:'instant'})`);
+  assert.ok(await ev(`document.querySelector('#azureSelection a').getBoundingClientRect().top>=0&&document.querySelector('#azureSelection a').getBoundingClientRect().bottom<=innerHeight`),'Selected link visible '+label);
+  await cdp('Page.captureScreenshot',{format:'png'},sessionId).then(r=>writeFile(path.join(f.dir,'selection-'+label+'.png'),Buffer.from(r.data,'base64')));
+ }
+ await cdp('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false},sessionId);
+ assert.equal(await ev(`(async()=>{
+ const el=id=>document.getElementById(id),q=s=>document.querySelector(s),pause=()=>new Promise(r=>setTimeout(r,30)),check=(v,m)=>{if(!v)throw Error(m);};
+ const wait=async fn=>{for(let i=0;i<180;i++){if(fn())return;await pause();}throw Error('Timeout: '+el('message').textContent);};
+ window.confirm=()=>false;q('[data-import]').click();await pause();check(el('requirementMeta').textContent.includes('v0'),'Cancelled import unchanged');window.confirm=()=>true;q('[data-import]').click();await wait(()=>el('requirementMeta').textContent.includes('v1'));
+ check(q('#contextSummary a')?.href==='https://dev.azure.com/MobileappsAmerica/agileNestCorp/_workitems/edit/2796','Imported link visible');check(!q('[data-import]'),'Imported selection cleared');
+ check(!el('intake').open,'Intake collapses after import');check(el('enrich').textContent==='Enriquecer con Hermes','Explicit user action');check(el('importedContext').textContent.includes('#2796'),'Imported context visible');check(el('contextResources').textContent.includes('Comentarios'),'Resources visible');check(el('importedContext').compareDocumentPosition(el('questions'))&Node.DOCUMENT_POSITION_FOLLOWING,'Context before questions');check(el('importedContext').getBoundingClientRect().top<innerHeight,'Imported context in viewport');check(!el('enrich').hidden,'Disabled button remains visible');check(el('ecosystemRail').textContent.includes('CP3'),'Ecosystem rail');check(q('[data-answer]'),'Questions visible');check(!q('#original img'),'Source escaped');check(el('original').textContent.includes('preserved'),'Original preserved');check(el('enrich').disabled,'No broker fails closed');
  q('[data-answer]').value='Synthetic QA environment';q('[data-rationale]').value='Synthetic source only';el('draftForm').requestSubmit();await wait(()=>el('requirementMeta').textContent.includes('v2'));
  el('reload').click();await wait(()=>q('[data-answer]').value==='Synthetic QA environment');check(el('versions').textContent.includes('questions'),'Diff contains changed questions');
  el('peopleFilter').value='responsable';el('peopleFilter').dispatchEvent(new Event('input'));check(el('candidates').textContent.includes('Responsable de prueba'),'Name filter');check(!el('candidates').textContent.includes('Revisor de prueba'),'Filter excludes mismatch');
@@ -50,6 +64,9 @@ test('V3 V1 journey: search select import, visible questions, answer save reload
  await cdp('Page.captureScreenshot',{format:'png'},sessionId).then(r=>writeFile(path.join(f.dir,'mobile.png'),Buffer.from(r.data,'base64')));
  await cdp('Page.reload',{},sessionId);for(let i=0;i<150;i++){if(await ev(`document.querySelector('[data-answer]')?.value==='Synthetic QA environment'`))break;await new Promise(r=>setTimeout(r,40));}
  assert.equal(await ev(`document.querySelector('[data-answer]')?.value`),'Synthetic QA environment');
+ assert.equal(await ev(`document.querySelector('#contextSummary a')?.href`),'https://dev.azure.com/MobileappsAmerica/agileNestCorp/_workitems/edit/2796','Source link survives actual reload');
+ await ev(`document.getElementById('importedContext').scrollIntoView({block:'start',behavior:'instant'})`);
+ await cdp('Page.captureScreenshot',{format:'png'},sessionId).then(r=>writeFile(path.join(f.dir,'imported-mobile.png'),Buffer.from(r.data,'base64')));
  const persisted=JSON.parse(await readFile(path.join(f.dir,'state.json'),'utf8'));assert.equal(persisted.revision,2);assert.equal(persisted.azureIntakes[0].snapshot.root.rev,3);assert.equal(persisted.history.length,2);assert.equal(reads,4);assert.deepEqual(errors,[]);
  // Fixture-only inference checks browser result labels, NOT real provider execution.
  enrichment.model='synthetic-browser-model';enrichment.transport=async()=>({context:'Propuesta sintética de contexto',constraints:'Pendiente revisión humana',questions:['¿Qué validación falta?']});

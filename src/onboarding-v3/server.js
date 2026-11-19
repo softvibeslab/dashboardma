@@ -9,12 +9,13 @@ import {ReadOnlyCatalogAdapter} from './catalog-adapter.js';
 import {continuityView,continuityChange,continuityPackage} from './continuity.js';
 import {StaffingService} from '../onboarding-v2/staffing.js';
 import {AzureIntake,azureIntakeFromEnv} from '../onboarding-v2/azure-intake.js';
-import {importProposal} from '../onboarding-v2/azure-proposal.js';
+import {v3AzureLinks,snapshotUrl,importLinkedProposal} from './azure-links.js';
 import {HermesEnrichment,assertGeneration,applyEnrichment,failure} from '../onboarding-v2/hermes-enrichment.js';
 import {brokerTransport} from '../onboarding-v2/hermes-broker.js';
 import {initial,change,blockers,digest,objects,objectHash,currentDecision} from '../onboarding-v2/model.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/state.json'),users=[],basePath='/dashboard/onboarding-v3',authMode='sso',sessionSecret='',publicOrigin='',classificationFile,catalogSourceFile='',directoryFile='',researchDirectory='',publicDirectory=false,staffingRequired=true,azureIntake=new AzureIntake(),hermesEnrichment=new HermesEnrichment()}={}){
+ azureIntake=v3AzureLinks(azureIntake);
  const catalog=catalogSourceFile?new ReadOnlyCatalogAdapter(catalogSourceFile,{directoryFile}):new ClassificationStore(classificationFile||path.join(path.dirname(dataFile),'classifications.json'),{directoryFile,researchDirectory});
  const staffing=new StaffingService(catalog,{directoryFile,identities:users});
  if(basePath&&!/^\/[a-zA-Z0-9/_-]+$/.test(basePath))throw Error('V3_BASE_PATH inválido.');
@@ -77,7 +78,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
     const continuity=continuityView(state);
     for(const text of pending[2])if(!continuity.handoff.pending.some(p=>p.phase===2&&p.text===text))continuity.handoff.pending.push({phase:2,text});
     continuity.handoff.ready=continuity.handoff.pending.length===0;
-    return {state,actor,continuity,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,hermes:{configured:await hermesEnrichment.available(),execution:executionView(state.aiExecutions?.at(-1))||null},integrations:{ai:state.hermesEnrichments?.length?'real':'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
+    return {state,azureLinks:Object.fromEntries((state.azureIntakes||[]).map(i=>[i.sourceHash,snapshotUrl(i.snapshot)])),actor,continuity,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,hermes:{configured:await hermesEnrichment.available(),execution:executionView(state.aiExecutions?.at(-1))||null},integrations:{ai:state.hermesEnrichments?.length?'real':'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
    };
    if(url.pathname==='/api/staffing'){
     if(req.method!=='GET')return send(res,405,{error:'Método no permitido.'});
@@ -107,7 +108,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
      if(input.revision!==before.revision)throw Object.assign(Error('Conflicto de versión: recarga antes de importar.'),{status:409});
      if(Object.keys(before.phases[1]).length&&input.confirmReplace!==true)throw Object.assign(Error('Confirma reemplazar el borrador; se preserva la versión anterior.'),{status:409});
      const snapshot=await azureIntake.read(input.id);
-     const next=importProposal(before,snapshot,actor,input);
+     const next=importLinkedProposal(before,snapshot,actor,input);
      await mkdir(path.dirname(dataFile),{recursive:true});const temp=dataFile+'.pending';await writeFile(temp,JSON.stringify(next,null,2),{mode:0o600});await rename(temp,dataFile);return view();
     };
     const work=queue.then(run);queue=work.catch(()=>{});return send(res,200,await work);
@@ -165,7 +166,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
    return send(res,404,{error:'Ruta no disponible.'});
   }
   if(!['GET','HEAD'].includes(req.method))return send(res,405,{error:'Método no permitido.'});
-  const names={'/continuity.js':'continuity.js','/':'index.html','/app.js':'app.js','/imported-context.js':'imported-context.js','/advanced':'advanced.html','/advanced.js':'advanced.js','/advanced.css':'advanced.css','/base.css':'base.css','/wizard.css':'wizard.css','/styles.css':'styles.css','/classifications':'classifications.html','/classifications/':'classifications.html','/classifications.js':'classifications.js','/classification-review.js':'classification-review.js','/classifications.css':'classifications.css'};const name=names[url.pathname];if(!name)return send(res,404,{error:'Solo onboarding V3.'});
+  const names={'/azure-links.js':'azure-links.js','/continuity.js':'continuity.js','/':'index.html','/app.js':'app.js','/imported-context.js':'imported-context.js','/advanced':'advanced.html','/advanced.js':'advanced.js','/advanced.css':'advanced.css','/base.css':'base.css','/wizard.css':'wizard.css','/styles.css':'styles.css','/classifications':'classifications.html','/classifications/':'classifications.html','/classifications.js':'classifications.js','/classification-review.js':'classification-review.js','/classifications.css':'classifications.css'};const name=names[url.pathname];if(!name)return send(res,404,{error:'Solo onboarding V3.'});
   let text=await readFile(path.join(root,'public/onboarding-v3',name));
   if(name.endsWith('.html'))text=Buffer.from(text.toString().replace(/(href|src)="\/(styles\.css|app\.js|advanced\.js|advanced\.css|base\.css|wizard\.css|classifications(?:\.css|\.js)?|)"/g,(_,attr,asset)=>`${attr}="${basePath}/${asset}"`));
   res.writeHead(200,{'content-type':name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html; charset=utf-8','cache-control':'no-store'});res.end(text);
