@@ -17,10 +17,10 @@ export function brokerTransport({socketPath='',key='',approved=false,exchange}={
  if(payload.schema!=='onboarding.hermes.result.v1'||payload.runtime!=='stateless-llm-inference-v1'||payload.executionId!==request.executionId||payload.inputHash!==request.inputHash||payload.sourceHash!==request.sourceHash||payload.model!==request.model||payload.toolsExecuted!==0)throw failure(502,'broker-binding');
  return payload.output;
  };
- transport.health=async()=>{
+ transport.health=async(requiredSchema)=>{
   const payload={schema:'onboarding.health.v1',nonce:randomUUID()};
   try{const result=await call({payload,mac:sign(key,payload)},AbortSignal.timeout(3500),'/v1/onboarding/health');const response=result.payload;
-   return typeof result.mac==='string'&&/^[a-f0-9]{64}$/.test(result.mac)&&timingSafeEqual(Buffer.from(result.mac),Buffer.from(sign(key,response)))&&response.schema===payload.schema&&response.nonce===payload.nonce&&response.runtime==='stateless-llm-inference-v1'&&response.ready===true;
+   return typeof result.mac==='string'&&/^[a-f0-9]{64}$/.test(result.mac)&&timingSafeEqual(Buffer.from(result.mac),Buffer.from(sign(key,response)))&&response.schema===payload.schema&&response.nonce===payload.nonce&&response.runtime==='stateless-llm-inference-v1'&&response.ready===true&&(!requiredSchema||response.schemas?.includes(requiredSchema));
   }catch{return false;}
  };
  return transport;

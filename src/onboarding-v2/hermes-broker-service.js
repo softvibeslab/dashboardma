@@ -1,4 +1,5 @@
 import http from 'node:http';
+import {instructions,refsFor,validateDocumentaryOutput} from './documentary-contract.js';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {chmod,chown,mkdtemp,writeFile,rm} from 'node:fs/promises';
@@ -15,15 +16,24 @@ const exact=(value,keys)=>value&&typeof value==='object'&&!Array.isArray(value)&
 const sensitive=value=>/-----BEGIN .*PRIVATE KEY|Bearer\s+[A-Za-z0-9_.-]{16,}|sk-[A-Za-z0-9_-]{20,}|(?:password|api[_-]?key|access[_-]?token|client[_-]?secret)\s*[=:]\s*\S{8,}/i.test(JSON.stringify(value));
 function validateInput(p,model){
  const fail=()=>{throw denied(400,'broker-input');};
- if(!exact(p,['schema','executionId','model','sourceHash','policy','snapshot','inputHash'])||JSON.stringify(p).length>48000||Buffer.byteLength(JSON.stringify(p))>48000||p.schema!=='onboarding.hermes.bounded.v1'||p.model!==model||!/^[-a-zA-Z0-9_]{16,80}$/.test(p.executionId)||!/^[a-f0-9]{64}$/.test(p.sourceHash)||!/^[a-f0-9]{64}$/.test(p.inputHash))fail();
+ const documentary=p?.schema==='onboarding.documentary.bounded.v2';
+ if(!exact(p,['schema','executionId','model','sourceHash','policy','snapshot','inputHash',...(documentary?['purpose','sourceRefs','derivatives']:[])])||JSON.stringify(p).length>48000||Buffer.byteLength(JSON.stringify(p))>48000||(!documentary&&p.schema!=='onboarding.hermes.bounded.v1')||p.model!==model||!/^[-a-zA-Z0-9_]{16,80}$/.test(p.executionId)||!/^[a-f0-9]{64}$/.test(p.sourceHash)||!/^[a-f0-9]{64}$/.test(p.inputHash))fail();
+ if(documentary&&!['summary','enrich'].includes(p.purpose))fail();
  const {inputHash,...unsigned}=p;if(digest(unsigned)!==inputHash)fail();
- const expected={tools:'none',maxInputBytes:48000,maxInputTokens:48000,maxOutputTokens:2000,maxOutputBytes:32000,timeoutMs:p.policy?.timeoutMs,retry:false,instructions:INSTRUCTIONS};
+ const expected={tools:'none',maxInputBytes:48000,maxInputTokens:48000,maxOutputTokens:2000,maxOutputBytes:32000,timeoutMs:p.policy?.timeoutMs,retry:false,instructions:documentary?instructions(p.purpose):INSTRUCTIONS};
  if(!exact(p.policy,Object.keys(expected))||Object.keys(expected).some(k=>p.policy[k]!==expected[k])||!Number.isInteger(p.policy.timeoutMs)||p.policy.timeoutMs<1||p.policy.timeoutMs>45000)fail();
  if(!exact(p.snapshot,['items'])||!Array.isArray(p.snapshot.items)||!p.snapshot.items.length||p.snapshot.items.length>100||sensitive(p.snapshot))fail();
  for(const item of p.snapshot.items){
   if(!exact(item,['id','revision','title','description','acceptanceCriteria','comments','attachments'])||!Number.isSafeInteger(item.id)||item.id<1||!Number.isSafeInteger(item.revision)||item.revision<1||['title','description','acceptanceCriteria'].some(k=>typeof item[k]!=='string')||!Array.isArray(item.comments)||!Array.isArray(item.attachments))fail();
   for(const comment of item.comments)if(!exact(comment,['id','version','text'])||!Number.isSafeInteger(comment.id)||!Number.isSafeInteger(comment.version)||typeof comment.text!=='string')fail();
   for(const attachment of item.attachments)if(!exact(attachment,attachment.status==='extracted'?['name','status','text']:['name','status'])||typeof attachment.name!=='string'||typeof attachment.status!=='string'||(attachment.status==='extracted'&&typeof attachment.text!=='string'))fail();
+ }
+ if(documentary){
+  if(JSON.stringify(p.sourceRefs)!==JSON.stringify(refsFor(p.snapshot))||!exact(p.derivatives,['seed','reviewedSummary'])||sensitive(p.derivatives))fail();
+  const seed=p.derivatives.seed,summary=p.derivatives.reviewedSummary;
+  if(!exact(seed,['text','version','hash','kind'])||typeof seed.text!=='string'||seed.text.length>4000||!Number.isSafeInteger(seed.version)||seed.version<0||digest(seed.text)!==seed.hash||seed.kind!=='human-guidance-not-evidence')fail();
+  if(p.purpose==='summary'&&summary!==null)fail();
+  if(summary!==null){if(!exact(summary,['version','outputHash','sourceHash','output','kind'])||!Number.isSafeInteger(summary.version)||summary.version<1||summary.sourceHash!==p.sourceHash||digest(summary.output)!==summary.outputHash||summary.kind!=='reviewed-ai-proposal-not-independent-evidence')fail();try{validateDocumentaryOutput(summary.output,'summary',p.sourceRefs);}catch{fail();}}
  }
 }
 function validateOutput(value){
@@ -121,7 +131,7 @@ export class BoundedBroker {
   if(!exact(payload,['schema','nonce'])||payload.schema!=='onboarding.health.v1'||!/^[-a-zA-Z0-9_]{16,80}$/.test(payload.nonce))throw denied(400,'broker-input');
   let ready=false;
   if(!this.closed&&!this.poisoned&&!this.active){try{const audit=await this.runtime.audit();ready=['isolatedPython','noSite','hostMemoriesHidden','hermesCodeHidden','readOnlyAuth','credentialReady'].every(k=>audit[k]===true);}catch{}}
-  const result={...payload,model:this.model,ready,runtime:'stateless-llm-inference-v1'};
+  const result={...payload,model:this.model,ready,runtime:'stateless-llm-inference-v1',schemas:['onboarding.hermes.bounded.v1','onboarding.documentary.bounded.v2'],purposes:['summary','enrich']};
   return {payload:result,mac:sign(this.key,result)};
  }
  async close(){if(this.active)throw denied(503,'broker-busy');if(this.closed)return;this.closed=true;await this.lock.close();await unlink(path.join(this.directory,'.owner'));await this.syncDirectory();}
@@ -148,7 +158,7 @@ export class BoundedBroker {
    await this.syncDirectory();
    // Reservation remains terminal on ANY failure, even a process crash.
    const controller=new AbortController();let timer,output;
-   try{output=validateOutput(await Promise.race([Promise.resolve().then(()=>this.runtime.execute(structuredClone(payload),controller.signal)),new Promise((_,reject)=>{timer=setTimeout(()=>{this.poisoned=true;controller.abort();reject(denied(504,'broker-timeout'));},payload.policy.timeoutMs);})]));}
+   try{const raw=await Promise.race([Promise.resolve().then(()=>this.runtime.execute(structuredClone(payload),controller.signal)),new Promise((_,reject)=>{timer=setTimeout(()=>{this.poisoned=true;controller.abort();reject(denied(504,'broker-timeout'));},payload.policy.timeoutMs);})]);output=payload.schema==='onboarding.documentary.bounded.v2'?validateDocumentaryOutput(raw,payload.purpose,payload.sourceRefs):validateOutput(raw);}
    finally{clearTimeout(timer);}
    const result={schema:'onboarding.hermes.result.v1',runtime:'stateless-llm-inference-v1',executionId:payload.executionId,inputHash:payload.inputHash,sourceHash:payload.sourceHash,model:this.model,toolsExecuted:0,output};
    const temp=file+'.'+randomUUID()+'.tmp';const handle=await open(temp,'wx',0o600);

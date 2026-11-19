@@ -12,9 +12,10 @@ import {AzureIntake,azureIntakeFromEnv} from '../onboarding-v2/azure-intake.js';
 import {v3AzureLinks,snapshotUrl,importLinkedProposal} from './azure-links.js';
 import {HermesEnrichment,assertGeneration,applyEnrichment,failure} from '../onboarding-v2/hermes-enrichment.js';
 import {brokerTransport} from '../onboarding-v2/hermes-broker.js';
+import {DocumentaryAI,currentSeed,currentSummary,saveSeed,reviewSummary,applyDocumentary,derivatives} from './documentary-ai.js';
 import {initial,change,blockers,digest,objects,objectHash,currentDecision} from '../onboarding-v2/model.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/state.json'),users=[],basePath='/dashboard/onboarding-v3',authMode='sso',sessionSecret='',publicOrigin='',classificationFile,catalogSourceFile='',directoryFile='',researchDirectory='',publicDirectory=false,staffingRequired=true,azureIntake=new AzureIntake(),hermesEnrichment=new HermesEnrichment()}={}){
+export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/state.json'),users=[],basePath='/dashboard/onboarding-v3',authMode='sso',sessionSecret='',publicOrigin='',classificationFile,catalogSourceFile='',directoryFile='',researchDirectory='',publicDirectory=false,staffingRequired=true,azureIntake=new AzureIntake(),hermesEnrichment=new HermesEnrichment(),documentaryAI=null}={}){
  azureIntake=v3AzureLinks(azureIntake);
  const catalog=catalogSourceFile?new ReadOnlyCatalogAdapter(catalogSourceFile,{directoryFile}):new ClassificationStore(classificationFile||path.join(path.dirname(dataFile),'classifications.json'),{directoryFile,researchDirectory});
  const staffing=new StaffingService(catalog,{directoryFile,identities:users});
@@ -78,7 +79,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
     const continuity=continuityView(state);
     for(const text of pending[2])if(!continuity.handoff.pending.some(p=>p.phase===2&&p.text===text))continuity.handoff.pending.push({phase:2,text});
     continuity.handoff.ready=continuity.handoff.pending.length===0;
-    return {state,azureLinks:Object.fromEntries((state.azureIntakes||[]).map(i=>[i.sourceHash,snapshotUrl(i.snapshot)])),actor,continuity,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,hermes:{configured:await hermesEnrichment.available(),execution:executionView(state.aiExecutions?.at(-1))||null},integrations:{ai:state.hermesEnrichments?.length?'real':'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
+    return {state,documentary:{enabled:Boolean(documentaryAI),seed:currentSeed(state),summary:currentSummary(state)||null,reviews:state.summaryReviews||[]},azureLinks:Object.fromEntries((state.azureIntakes||[]).map(i=>[i.sourceHash,snapshotUrl(i.snapshot)])),actor,continuity,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,hermes:{configured:await (documentaryAI||hermesEnrichment).available(),execution:executionView(state.aiExecutions?.at(-1))||null},integrations:{ai:state.hermesEnrichments?.length?'real':'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
    };
    if(url.pathname==='/api/staffing'){
     if(req.method!=='GET')return send(res,405,{error:'Método no permitido.'});
@@ -113,28 +114,41 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
     };
     const work=queue.then(run);queue=work.catch(()=>{});return send(res,200,await work);
    }
-   if(url.pathname==='/api/hermes/enrich'){
+   if(url.pathname==='/api/ai/preview'&&req.method==='GET'){
+    if(!documentaryAI)throw failure(503,'not-configured');
+    if([...url.searchParams.keys()].some(k=>!['purpose','includeSummary'].includes(k)))throw failure(400,'input-fields');
+    return send(res,200,documentaryAI.preview(await read(),{purpose:url.searchParams.get('purpose')||'enrich',includeSummary:url.searchParams.get('includeSummary')==='true'}));
+   }
+   if(['/api/ai/seed','/api/ai/review-summary'].includes(url.pathname)){
+    if(req.method!=='POST')return send(res,405,{error:'Método no permitido.'});
+    const input=await body(req);await serial(async()=>{const state=await read();await persist(url.pathname.endsWith('/seed')?saveSeed(state,actor,input):reviewSummary(state,actor,input));});return send(res,200,await view());
+   }
+   if(['/api/hermes/enrich','/api/ai/summary'].includes(url.pathname)){
     if(req.method!=='POST')return send(res,405,{error:'Método no permitido.'});
     if(!actor.roles.some(r=>['editor','coordinator'].includes(r)))throw failure(403,'forbidden');
     const input=await body(req);
-    if(Object.keys(input).some(k=>!['revision','executionId'].includes(k)))throw failure(400,'input-fields');
+    const purpose=url.pathname.endsWith('/summary')?'summary':'enrich',service=purpose==='summary'?documentaryAI:(documentaryAI||hermesEnrichment);
+    if(!service)throw failure(503,'not-configured');
+    if(Object.keys(input).some(k=>!['revision','executionId',...(documentaryAI&&purpose==='enrich'?['includeSummary']:[])].includes(k))||(input.includeSummary!==undefined&&typeof input.includeSummary!=='boolean'))throw failure(400,'input-fields');
+    if(documentaryAI){input.purpose=purpose;input.includeSummary=input.includeSummary===true;}
     let launch;
     const execution=await serial(async()=>{
      const before=await read();
      const existing=before.aiExecutions?.find(e=>e.executionId===input.executionId);
-     if(existing){if(existing.revision!==input.revision||existing.actor!==actor.id)throw failure(409,'idempotency-conflict');return executionView(existing);}
+     if(existing){if(existing.revision!==input.revision||existing.actor!==actor.id||(existing.purpose||'enrich')!==purpose||Boolean(existing.includeSummary)!==Boolean(input.includeSummary))throw failure(409,'idempotency-conflict');return executionView(existing);}
      const source=assertGeneration(before,actor,input);
-     if(!await hermesEnrichment.available())throw failure(503,'not-configured');
+     if(!await service.available())throw failure(503,'not-configured');
+     const derived=documentaryAI?derivatives(before,input.includeSummary):null;
      if(running.size)throw failure(429,'busy');
      if((before.aiExecutions?.length||0)>=100)throw failure(409,'execution-ledger-full');
-     const entry={executionId:input.executionId,actor:actor.id,revision:input.revision,sourceHash:source.sourceHash,model:hermesEnrichment.model,at:new Date().toISOString(),status:'in-progress'};
+     const entry={executionId:input.executionId,actor:actor.id,revision:input.revision,sourceHash:source.sourceHash,purpose,includeSummary:Boolean(input.includeSummary),...(derived?{seedVersion:derived.seed.version,seedHash:derived.seed.hash,summaryVersion:derived.reviewedSummary?.version||null}:{}),model:service.model,at:new Date().toISOString(),status:'in-progress'};
      before.aiExecutions||=[];before.aiExecutions.push(entry);await persist(before);running.add(input.executionId);
      launch=async()=>{
       let result,error;
-      try{result=await hermesEnrichment.generate(before,actor,input);}catch(e){error=e;}
+      try{result=await service.generate(before,actor,input);}catch(e){error=e;}
       await serial(async()=>{
        let current=await read();let record=current.aiExecutions.find(e=>e.executionId===input.executionId);
-       try{if(error)throw error;current=applyEnrichment(current,result,actor);record=current.aiExecutions.find(e=>e.executionId===input.executionId);Object.assign(record,{status:'real',inputHash:result.inputHash,outputHash:result.outputHash,version:current.revision});}
+       try{if(error)throw error;current=documentaryAI?applyDocumentary(current,result,actor):applyEnrichment(current,result,actor);record=current.aiExecutions.find(e=>e.executionId===input.executionId);Object.assign(record,{status:'real',inputHash:result.inputHash,outputHash:result.outputHash,version:current.revision});}
        catch(e){Object.assign(record,{status:'failed',code:['stale-revision','source-integrity','timeout','invalid-output'].includes(e.code)?e.code:'generation-failed'});}
        record.finishedAt=new Date().toISOString();await persist(current);
       });
@@ -166,7 +180,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
    return send(res,404,{error:'Ruta no disponible.'});
   }
   if(!['GET','HEAD'].includes(req.method))return send(res,405,{error:'Método no permitido.'});
-  const names={'/azure-links.js':'azure-links.js','/continuity.js':'continuity.js','/':'index.html','/app.js':'app.js','/imported-context.js':'imported-context.js','/advanced':'advanced.html','/advanced.js':'advanced.js','/advanced.css':'advanced.css','/base.css':'base.css','/wizard.css':'wizard.css','/styles.css':'styles.css','/classifications':'classifications.html','/classifications/':'classifications.html','/classifications.js':'classifications.js','/classification-review.js':'classification-review.js','/classifications.css':'classifications.css'};const name=names[url.pathname];if(!name)return send(res,404,{error:'Solo onboarding V3.'});
+  const names={'/documentary-ai.js':'documentary-ai.js','/azure-links.js':'azure-links.js','/continuity.js':'continuity.js','/':'index.html','/app.js':'app.js','/imported-context.js':'imported-context.js','/advanced':'advanced.html','/advanced.js':'advanced.js','/advanced.css':'advanced.css','/base.css':'base.css','/wizard.css':'wizard.css','/styles.css':'styles.css','/classifications':'classifications.html','/classifications/':'classifications.html','/classifications.js':'classifications.js','/classification-review.js':'classification-review.js','/classifications.css':'classifications.css'};const name=names[url.pathname];if(!name)return send(res,404,{error:'Solo onboarding V3.'});
   let text=await readFile(path.join(root,'public/onboarding-v3',name));
   if(name.endsWith('.html'))text=Buffer.from(text.toString().replace(/(href|src)="\/(styles\.css|app\.js|advanced\.js|advanced\.css|base\.css|wizard\.css|classifications(?:\.css|\.js)?|)"/g,(_,attr,asset)=>`${attr}="${basePath}/${asset}"`));
   res.writeHead(200,{'content-type':name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html; charset=utf-8','cache-control':'no-store'});res.end(text);
@@ -178,6 +192,6 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
  const users=configFile?JSON.parse(await readFile(configFile,'utf8')):[];
  const hermesEnrichment=new HermesEnrichment({model:process.env.V3_HERMES_MODEL||'',transport:brokerTransport({socketPath:process.env.V3_HERMES_BROKER_SOCKET||'',key:process.env.V3_HERMES_BROKER_KEY||'',approved:process.env.V3_HERMES_AUTHORIZED==='true'})});
  const port=Number(process.env.V3_PORT||4193),host=process.env.V3_LISTEN_HOST||'127.0.0.1',basePath=process.env.V3_BASE_PATH||'/dashboard/onboarding-v3',authMode=process.env.V3_AUTH_MODE||'sso';
- const server=createV3Server({hermesEnrichment,dataFile:process.env.V3_DATA_FILE,users,basePath,authMode,sessionSecret:process.env.SESSION_SECRET,publicOrigin:process.env.V3_PUBLIC_ORIGIN,classificationFile:process.env.V3_CLASSIFICATION_FILE,catalogSourceFile:process.env.V3_CATALOG_SOURCE_FILE,directoryFile:process.env.V3_AZURE_DIRECTORY_FILE,researchDirectory:process.env.V3_CLASSIFICATION_RESEARCH_DIRECTORY,publicDirectory:process.env.V3_PUBLIC_DIRECTORY==='true',staffingRequired:true,azureIntake:azureIntakeFromEnv(Object.fromEntries(Object.entries(process.env).filter(([k])=>k.startsWith('V3_AZURE_')).map(([k,v])=>[k.replace('V3_','V2_'),v])))});
+ const server=createV3Server({hermesEnrichment,documentaryAI:new DocumentaryAI({model:hermesEnrichment.model,transport:hermesEnrichment.transport}),dataFile:process.env.V3_DATA_FILE,users,basePath,authMode,sessionSecret:process.env.SESSION_SECRET,publicOrigin:process.env.V3_PUBLIC_ORIGIN,classificationFile:process.env.V3_CLASSIFICATION_FILE,catalogSourceFile:process.env.V3_CATALOG_SOURCE_FILE,directoryFile:process.env.V3_AZURE_DIRECTORY_FILE,researchDirectory:process.env.V3_CLASSIFICATION_RESEARCH_DIRECTORY,publicDirectory:process.env.V3_PUBLIC_DIRECTORY==='true',staffingRequired:true,azureIntake:azureIntakeFromEnv(Object.fromEntries(Object.entries(process.env).filter(([k])=>k.startsWith('V3_AZURE_')).map(([k,v])=>[k.replace('V3_','V2_'),v])))});
  server.listen(port,host,()=>console.log(`Onboarding V3: http://${host}:${port}${basePath}/ (${authMode}; ${users.length} identidades configuradas)`));
 }
