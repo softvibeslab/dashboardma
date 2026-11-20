@@ -26,6 +26,10 @@ export class ContextCapability{
  }
 }
 
+export function bindingSetHash(bindings){
+ const rows=bindings.map(b=>JSON.stringify(['actor','org','project','caseId','sourceHash'].map(k=>b[k]))).sort((a,b)=>Buffer.compare(Buffer.from(a),Buffer.from(b)));
+ return createHash('sha256').update('['+rows.join(',')+']','utf8').digest('hex');
+}
 export function scopeResolverFromBindings(bindings=[]){
  const frozen=structuredClone(bindings),keys=new Set();
  for(const binding of frozen){
@@ -45,7 +49,7 @@ export const HERMES_COMMIT='ae2a81ccc00e9b7c06301523e5bb09608397149c';
 export const NATIVE_SCHEMAS={summary:'onboarding.documentary.bounded.v2',enrich:'onboarding.documentary.bounded.v2',question:QUESTION_SCHEMA};
 const attested=(v,synthetic=false)=>v?.runtime===NATIVE_RUNTIME&&v.model==='gpt-6.1-sol'&&v.modelMode===(synthetic?'deterministic-fixture':'real-provider')&&v.hermesCommit===HERMES_COMMIT&&JSON.stringify(v.allowedTools)==='["authorized_context"]'&&['hostHomeHidden','hostWorkspacesHidden','credentialsHidden','networkDisabled','runtimeReadOnly','capabilitiesDropped'].every(k=>v.isolation?.[k]===true);
 /** Private backend-only Unix transport. Key is mediator auth, NEVER a provider credential. */
-export function nativeAgentTransport({socketPath='',key='',authorized=false}={}){
+export function nativeAgentTransport({socketPath='',key='',authorized=false,expectedBindingsHash=''}={}){
  if(!authorized||!socketPath.startsWith('/')||key.length<32)return null;
  const call=(route,payload,signal)=>new Promise((resolve,reject)=>{
   const data=JSON.stringify(payload);if(Buffer.byteLength(data)>48000)return reject(failure(413,'input-limit'));
@@ -59,7 +63,7 @@ export function nativeAgentTransport({socketPath='',key='',authorized=false}={})
  });
  const transport=(payload,signal)=>call('/execute',payload,signal);
  transport.describe=()=>call('/health',{});
- transport.health=async(purpose='enrich')=>{try{const value=await transport.describe();return value.ready===true&&attested(value)&&value.contextPolicy?.questionHistory==='none'&&value.contextPolicy?.maxOriginalRefs===8&&value.purposes?.includes(purpose)&&value.schemas?.includes(NATIVE_SCHEMAS[purpose]);}catch{return false;}};
+ transport.health=async(purpose='enrich')=>{try{const value=await transport.describe();return /^[a-f0-9]{64}$/.test(expectedBindingsHash)&&value.bindingsHash===expectedBindingsHash&&value.coverage?.bindingCount>0&&value.coverage.coveredBindingCount===value.coverage.bindingCount&&value.ready===true&&attested(value)&&value.contextPolicy?.questionHistory==='none'&&value.contextPolicy?.maxOriginalRefs===8&&value.purposes?.includes(purpose)&&value.schemas?.includes(NATIVE_SCHEMAS[purpose]);}catch{return false;}};
  return transport;
 }
 /** Drop-in documentaryAI (preview/generate/configured/available/model) for createV3Server.
@@ -74,7 +78,8 @@ export class HermesAgentEngine extends DocumentaryAI{
   this.engine=transport?.synthetic===true?{kind:'hermes-agent-fixture',label:'Hermes nativo · modelo sintético de prueba (sin proveedor)'}:{kind:'hermes-agent',label:'Hermes · agente de contexto autorizado (solo lectura)'};
  }
  configured(){return Boolean(this.scopeResolver&&typeof this.transport==='function'&&typeof this.transport.health==='function');}
- async available(purpose='enrich'){return ['summary','enrich','question'].includes(purpose)&&this.configured()&&await this.transport.health(purpose);}
+ scopeReady({actor,state}={}){try{const scope=this.scopeResolver({actor,state});return actor?.authenticated===true&&valid(scope)&&scope.actor===actor.id;}catch{return false;}}
+ async available(purpose='enrich',context=null){return ['summary','enrich','question'].includes(purpose)&&this.configured()&&(!context||this.scopeReady(context))&&await this.transport.health(purpose);}
  preview(state,input={}){
   if(input.purpose!=='question')return super.preview(state,input);
   const preview=super.preview(state,{purpose:'enrich'}),q=state.phases[1].questions.find(q=>q.id===input.id);

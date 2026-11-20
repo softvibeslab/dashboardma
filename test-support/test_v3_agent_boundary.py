@@ -6,6 +6,24 @@ import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 class NativeBoundaryTest(unittest.TestCase):
+    def test_readiness_covers_every_grant_not_only_one_project(self):
+        import importlib.util, tempfile, os
+        spec=importlib.util.spec_from_file_location('coverage_broker',ROOT/'scripts/v3-hermes-agent-broker.py')
+        assert spec is not None and spec.loader is not None
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        first={'actor':'entra:tenant:oid','org':'synthetic','project':'alpha','caseId':'workitem:900001','sourceHash':'a'*64}
+        second={**first,'actor':'fixture-other','project':'beta'}
+        source={'id':'fixture-alpha','org':'synthetic','project':'alpha','kind':'repository','ref':'fixture-v1','text':'Synthetic alpha context.'}
+        with tempfile.TemporaryDirectory(dir=os.environ['TMPDIR']) as directory:
+            service=module.Broker(pathlib.Path(directory),{'grants':[first,second],'sources':[source]})
+            self.assertEqual(service.coverage()['coveredBindingCount'],1)
+            self.assertFalse(service.context_ready())
+            service.manifest['sources'].append({**source,'id':'fixture-beta','project':'beta'})
+            self.assertTrue(service.context_ready())
+            self.assertEqual(service.coverage()['coveredBindingCount'],2)
+            self.assertFalse(service.coverage()['allProjectsIndexed'])
+            service.db.close()
+
     def test_os_isolation_and_dispatch_denials(self):
         proc = subprocess.run(['python3', str(ROOT/'scripts/v3-hermes-agent-probe.py'), '--audit'], capture_output=True, text=True, timeout=45)
         self.assertEqual(proc.returncode, 0, proc.stderr)

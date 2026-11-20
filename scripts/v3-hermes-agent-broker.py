@@ -26,6 +26,11 @@ native=importlib.util.module_from_spec(spec);spec.loader.exec_module(native)
 def digest(value):
     return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
+def binding_set_hash(bindings):
+    keys=('actor','org','project','caseId','sourceHash')
+    rows=sorted(json.dumps([b[k] for k in keys],ensure_ascii=False,separators=(',',':')).encode('utf-8') for b in bindings)
+    return hashlib.sha256(b'['+b','.join(rows)+b']').hexdigest()
+
 def scope_valid(value):
     return isinstance(value,dict) and set(value)=={'actor','org','project','caseId'} and all(isinstance(x,str) and 0<len(x.strip()) and len(x)<=200 and not re.search(r'[\x00-\x1f\x7f]',x) for x in value.values())
 
@@ -49,6 +54,17 @@ class Broker:
         os.chmod(self.directory/'agent.sqlite',0o600)
         self.db.executescript('CREATE TABLE IF NOT EXISTS jobs(scope TEXT,id TEXT,hash TEXT,status TEXT,result TEXT,at REAL,PRIMARY KEY(scope,id)); CREATE TABLE IF NOT EXISTS sessions(scope TEXT PRIMARY KEY,history TEXT,at REAL);')
         self.db.execute("UPDATE jobs SET status='interrupted-no-retry' WHERE status='running'");self.db.commit()
+    def coverage(self):
+        covered=0
+        for grant in self.manifest['grants']:
+            try:
+                self.authorize({k:grant[k] for k in ('actor','org','project','caseId')},grant['sourceHash'])
+                covered+=1
+            except (PermissionError,ValueError): pass
+        return {'sourceCount':len(self.manifest['sources']),'bindingCount':len(self.manifest['grants']),'coveredBindingCount':covered,'allProjectsIndexed':False}
+    def context_ready(self):
+        coverage=self.coverage()
+        return coverage['bindingCount']>0 and coverage['coveredBindingCount']==coverage['bindingCount']
     def session_count(self):
         return self.db.execute('SELECT count(*) FROM sessions').fetchone()[0]
     def authorize(self,scope,source_hash):
@@ -120,7 +136,7 @@ def _serve_locked(directory,manifest,key_file,real=False,socket_directory=None):
                 request=json.loads(self.rfile.read(length))
                 if self.path=='/health':
                     if request!={}: raise ValueError('input-schema')
-                    return self.reply(200,{'ready':any(s['org']==g['org'] and s['project']==g['project'] for s in broker.manifest['sources'] for g in broker.manifest['grants']) and (not real or native.credential_ready()),'runtime':'hermes-native-sealed-v1','allowedTools':['authorized_context'],'model':native.MODEL,'modelMode':'real-provider' if real else 'deterministic-fixture','isolation':audit['isolation'],'hermesCommit':native.HERMES_COMMIT,'schemas':['onboarding.documentary.bounded.v2','onboarding.questions.bounded.v1'],'purposes':['summary','enrich','question'],'contextPolicy':{'questionHistory':'none','maxOriginalRefs':8},'coverage':{'sourceCount':len(broker.manifest['sources']),'bindingCount':len(broker.manifest['grants']),'allProjectsIndexed':False}})
+                    return self.reply(200,{'ready':broker.context_ready() and (not real or native.credential_ready()),'bindingsHash':binding_set_hash(broker.manifest['grants']),'runtime':'hermes-native-sealed-v1','allowedTools':['authorized_context'],'model':native.MODEL,'modelMode':'real-provider' if real else 'deterministic-fixture','isolation':audit['isolation'],'hermesCommit':native.HERMES_COMMIT,'schemas':['onboarding.documentary.bounded.v2','onboarding.questions.bounded.v1'],'purposes':['summary','enrich','question'],'contextPolicy':{'questionHistory':'none','maxOriginalRefs':8},'coverage':broker.coverage()})
                 result=broker.execute(request);return self.reply(200,result)
             except PermissionError: return self.reply(403,{'error':'scope-denied'})
             except Exception as exc:

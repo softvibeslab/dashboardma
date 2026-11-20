@@ -20,6 +20,8 @@ Se observaron fallos RED para disponibilidad de preguntas, proyección/contrato 
 | Native loop, tools y sandbox reales por Unix; summary/enrich/question con modelo determinista y cero proveedor | Mismo test HTTP + `test-support/test_v3_agent_boundary.py` |
 | Historial de pregunta vacío incluso con sesión envenenada; separación de ledger y contexto | Test Python; el adapter exige el recuento observado `historyMessages=0` |
 | Proveedor real vs fixture, schemas/purposes, única herramienta, no-history policy | `test/v3-agent-readiness.test.js`, tests bridge; fixture nunca activa bootstrap de producción |
+| Handshake UI/app vs broker | `test/v3-agent-binding-handshake.test.js`: SHA256 idéntico de grants/bindings, Unicode literal y actor SSO opaco; descriptor de protocolo, no inferencia |
+| Todos los bindings cubiertos, no solo uno; plan de contexto utilizable sin habilitar runtime | Test Python + `test/v3-agent-context-manifest.test.js`; validador CLI real, sin proveedor |
 | Motor anterior conservado hasta readiness completo; sin inferencia al arrancar ni retries entre motores | `test/v3-agent-startup.test.js` |
 | Unix compartido 0710/0660 sin exponer DB 0700/0600, lock único, stale socket y SIGTERM/reinicio | Test Python del supervisor |
 | Nombre del motor, progreso y herramientas/fuentes reales observadas; incorporar no guarda/aprueba | `test/v3-agent-question-browser.test.js`, Chromium real con backend y mediador reales |
@@ -39,9 +41,19 @@ python3 test-support/test_v3_agent_boundary.py
 python3 scripts/v3-hermes-agent-probe.py --audit
 ```
 
-El runner de entrega registra SHA y salidas reales fuera de Git, crea un archivo con `git archive <SHA>` y repite desde él las suites completas en serie. No usa node_modules, ficheros no versionados, estado productivo o memorias del worktree para completar el artefacto. El runtime Hermes fijado es una dependencia externa explícita del supervisor y debe existir en el host; el archivo no pretende contenerlo.
+El runner de entrega registra SHA y salidas reales fuera de Git, crea un archivo con `git archive <SHA>` y repite desde él las suites completas en serie. No depende de ficheros no versionados ni estado privado del worktree original, datos productivos o memorias para completar el artefacto. Las dependencias de ejecución ya instaladas (Node/Python/Chromium y runtime Hermes fijado) son explícitas; no se empaquetan como supuestos archivos propios del repo. El runtime Hermes fijado es una dependencia externa explícita del supervisor y debe existir en el host; el archivo no pretende contenerlo.
 
 Los totales definitivos, paths de logs, SHA de archivo/commit y comprobación `ls-remote` se adjuntan en el recibo de entrega externo, no se inventan aquí antes de ejecutar la regresión. Los resultados del incremento anterior (33 Node / 3 Python) no son los totales del merge. Se conserva la evidencia de la única prueba sintética de proveedor real anterior en `docs/evidence/onboarding-v3-agent-real-probe.json`; **este incremento no ejecuta nuevas llamadas pagadas ni IA sobre clientes**.
+
+## Gaps de handshake/contexto corregidos antes de habilitar
+
+La revisión posterior a la primera regresión limpia (`65a6f384c1b8b6edfe4bcf35870bfd2313024ffc`: 265 Node pass, 30 Python legacy + 5 boundary pass) detectó tres gaps reales, no resueltos cambiando etiquetas:
+
+1. El health inicial admitía cualquier grant cubierto. Ahora valida todos los grants con la misma recuperación/ACL/presupuesto usados al ejecutar; publica recuento cubierto, nunca proyectos/actores/texto.
+2. La app y el mediador podían tener grants distintos y aun así completar el handshake general. Ahora el arranque exige el mismo SHA256 canónico de bindings/grants; Python/Node comparan Unicode y actores SSO literales sin normalizar. Tests primero fallaron por el comportamiento ausente y después pasaron.
+3. Un actor o un nuevo snapshot sin binding podía ver botones disponibles porque el motor tenía readiness global. Ahora el estado/UI y la admisión HTTP de los tres propósitos comprueban el actor autenticado + intake guardado. Se muestra «contexto no autorizado para este snapshot» y no se reserva trabajo ni se llama al mediador. El HTTP nativo reprodujo `configured=true` para un actor sintético no ligado y después verificó la denegación y cero llamadas extra.
+
+El CLI offline `v3-native-agent-context-validate.py` permite comprobar el plan privado sin inferencia ni iniciar servicios. Plan coherente no equivale a runtime listo ni a clasificación humana aprobada. El último SHA se vuelve a verificar desde archivo limpio; los totales anteriores no se atribuyen a los cambios posteriores.
 
 ## Gates todavía operativos, no defectos ocultos de compatibilidad
 

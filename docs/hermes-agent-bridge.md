@@ -74,11 +74,12 @@ El transporte rechaza que un broker determinista se anuncie como proveedor real.
 Ejemplo de **wiring pendiente de revisión**, no un despliegue realizado:
 
 ```js
-import {HermesAgentEngine,nativeAgentTransport,scopeResolverFromBindings}
+import {HermesAgentEngine,nativeAgentTransport,scopeResolverFromBindings,bindingSetHash}
   from './hermes-agent-engine.js';
 // operatorManifest y mediatorKey llegan del backend, fuera de Git/public/ y sin provider keys.
 const documentaryAI=new HermesAgentEngine({
-  transport:nativeAgentTransport({socketPath:operatorSocket,key:mediatorKey,authorized:true}),
+  transport:nativeAgentTransport({socketPath:operatorSocket,key:mediatorKey,authorized:true,
+    expectedBindingsHash:bindingSetHash(operatorManifest.grants)}),
   scopeResolver:scopeResolverFromBindings(operatorManifest.grants)
 });
 // Pasar documentaryAI a createV3Server({...opcionesExistentes,documentaryAI}).

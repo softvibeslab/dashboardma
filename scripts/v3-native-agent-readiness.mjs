@@ -3,5 +3,5 @@ import {documentaryAIFromEnvironment} from '../src/onboarding-v3/native-agent-st
 const result=await documentaryAIFromEnvironment({model:'existing-controlled-engine'});
 const ready=result.selection==='native-ready';
 const description=ready?await result.documentaryAI.transport.describe():null;
-console.log(JSON.stringify({ready,selection:result.selection,engine:result.documentaryAI.engine||{kind:'controlled-llm',label:'Motor actual conservado'},...(description?{runtime:description.runtime,hermesCommit:description.hermesCommit,schemas:description.schemas,purposes:description.purposes,allowedTools:description.allowedTools,coverage:description.coverage,contextPolicy:description.contextPolicy}:{}),providerRequests:0},null,2));
+console.log(JSON.stringify({ready,selection:result.selection,gate:result.gate,engine:result.documentaryAI.engine||{kind:'controlled-llm',label:'Motor actual conservado'},...(description?{runtime:description.runtime,hermesCommit:description.hermesCommit,schemas:description.schemas,purposes:description.purposes,allowedTools:description.allowedTools,coverage:description.coverage,contextPolicy:description.contextPolicy}:{}),providerRequests:0},null,2));
 process.exitCode=ready?0:3;

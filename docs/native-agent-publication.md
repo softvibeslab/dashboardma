@@ -1,6 +1,6 @@
 # Publicación secuencial segura del agente V3 — receta operativa
 
-**Estado de esta entrega:** candidato unido; no se han instalado unidades, cambiado procesos/volúmenes/env productivos, modificado el broker vivo ni hecho nuevas llamadas pagadas. La publicación de preguntas `5b19929fe16568ee1bb07c0a6089d62c1678e333` permanece a cargo de su coordinador. Esta receta es para ejecución posterior del operador/parent, no constancia de despliegue.
+**Estado de esta entrega:** candidato unido; no se han instalado unidades, cambiado procesos/volúmenes/env productivos, modificado el broker vivo ni hecho nuevas llamadas pagadas. El release vivo de preguntas `5b19929fe16568ee1bb07c0a6089d62c1678e333`, ya confirmado por el coordinador, se conserva. Aunque la publicación secuencial fue autorizada condicionalmente, no se instala un agente sin el corpus y readiness real que exige esa autorización. Esta receta no es constancia de despliegue.
 
 ## Gate que impide anunciar un agente inexistente
 
@@ -40,12 +40,24 @@ El mediador no lee todos los proyectos ni memorias. El manifiesto privado tiene 
 
 - Cada grant: `{actor, org, project, caseId, sourceHash}`. Identidad real y snapshot exacto guardado, no correo ni texto del prompt.
 - Cada fuente: `{id, org, project, kind, ref, text}`. `kind` solo `repository`, `graphify` o `ecosystem`; `ref` SHA completo o fecha UTC ISO. `id` debe preservar ruta/localización de la fuente. El mediador calcula SHA256 del texto.
-- Extraer solo fragmentos aprobados de los repositorios/Graphify **ya autorizados** y de la documentación común del Ecosistema. Si se usa un export Azure existente como artefacto fuente, conservar organización/proyecto/work item y versión; no ampliar endpoints ni permisos. Las fuentes Azure del requerimiento siguen entrando por el snapshot existente y su selección acotada, no mediante consultas nuevas del agente.
+- Extraer solo fragmentos aprobados de los repositorios/Graphify **ya autorizados** y de la documentación común del Ecosistema. Las fuentes Azure del requerimiento siguen entrando por el snapshot existente y su selección acotada, conservando organización/proyecto/work item/versión, no mediante consultas nuevas del agente. No etiquetar un export Azure como repositorio/Graphify ficticio para superar el gate de índice; si no hay fuentes propias autorizadas, falla cerrado.
 - No ingerir automáticamente el catálogo de personal/proyectos entero, conversaciones, caches, credenciales, `.env`, memorias privadas o datos ERP. Bocadeli/QueryGuard siguen fuera de las capacidades.
 - Compartir contexto solo cuando sea **a la vez** `org=common`, `project=ecosystem`, `kind=ecosystem` y haya revisión explícita de clasificación. El permiso para «todos los proyectos» no evita fronteras de cliente.
 - Sin una fuente propia del proyecto y su grant exacto, el mediador falla cerrado, incluso si existen fuentes comunes. Máximo 100 fuentes, 8000 caracteres/fuente, 24 KB recuperados; no se presupone cobertura total. Manifest y clave `0600`, fuera del docroot/Git. Publicar nuevas versiones solo mediante revisión, no hooks/watchers globales.
 
-La app recibe **solo una copia de `manifest.grants` como array JSON de bindings**, no todo el corpus ni la credencial de proveedor. Validar que coincide con la versión desplegada del manifiesto y con snapshots actuales. Un cambio de importación/hash necesita otro binding aprobado. Los textos recuperados quedan asociados a fuentes/proyecto/ref/hash y tool-call ID; no pasan a ser evidencia Azure independiente.
+La app recibe **solo una copia de `manifest.grants` como array JSON de bindings**, no todo el corpus ni la credencial de proveedor. El handshake ahora exige SHA256 canónico idéntico de esos bindings y los grants efectivos del mediador, y cobertura válida dentro del presupuesto para **todos** los bindings, no solo un proyecto. No se publican IDs de actores ni texto en `/health`. Identificadores son literales opacos imprimibles, máximo 200 caracteres: conserva dos puntos de IDs SSO y espacios/Unicode de proyectos sin normalizarlos, derivar roles por correo ni reinterpretarlos como paths.
+
+Un cambio de importación/hash necesita otro binding aprobado; app/mediador deben reiniciarse coordinadamente con el mismo conjunto revisado. Los textos recuperados quedan asociados a fuentes/proyecto/ref/hash y tool-call ID; no pasan a ser evidencia Azure independiente.
+
+Validación offline real, sin inferencia/credenciales/lectura de memorias ni modificar servicios, antes de instalar:
+
+```sh
+python3 scripts/v3-native-agent-context-validate.py \
+  --manifest /ruta/privada/manifest.json --bindings /ruta/privada/bindings.json
+```
+
+Exit `0` solo confirma plan privado coherente y cobertura de los grants; **no** readiness de runtime/proveedor. Exit `3` distingue plan ausente/inválido, permisos, ambigüedad, bindings distintos o proyectos sin índice/presupuesto. Solo emite hashes y recuentos, nunca textos ni actores. No crea grants RBAC ni consulta Azure/ERP. Los planes siguen requiriendo revisión humana de clasificación y minimización de cada fragmento.
+
 
 ## 3. Instalar artefacto separado y supervisor Unix
 
