@@ -1,0 +1,39 @@
+{
+  "evidenceKind": "reduced-transcription-of-observed-real-tool-output",
+  "command": "python3 scripts/v3-hermes-agent-probe.py --real",
+  "observedAtDateUTC": "2026-11-20",
+  "scope": "Synthetic Alpha fixture only; no client data",
+  "stage": "Native agent proof before subsequent trace/mediator hardening; later regression runs use deterministic inference fixtures to avoid redundant provider costs",
+  "runtime": "hermes-native-sealed-v1",
+  "hermesCommit": "ae2a81ccc00e9b7c06301523e5bb09608397149c",
+  "model": "gpt-6.1-sol",
+  "modelMode": "real-provider",
+  "providerRequests": 2,
+  "isolation": {
+    "hostHomeHidden": true,
+    "hostWorkspacesHidden": true,
+    "credentialsHidden": true,
+    "networkDisabled": true,
+    "runtimeReadOnly": true,
+    "capabilitiesDropped": true
+  },
+  "answer": {
+    "answer": "Alpha must pass human review before publishing. Coverage is limited to indexed authorized excerpts; not all projects are indexed.",
+    "citations": [
+      {"source_id": "fixture-alpha-guide", "project": "alpha", "ref": "fixture-v1"}
+    ]
+  },
+  "tools": [
+    {
+      "toolCallId": "call_1c403ab15e4f4b4fb02d7481e574c1dd",
+      "name": "authorized_context",
+      "sourceIds": ["fixture-alpha-guide"]
+    }
+  ],
+  "usage": [
+    {"input_tokens": 1933, "output_tokens": 15, "total_tokens": 1948},
+    {"input_tokens": 2079, "output_tokens": 71, "total_tokens": 2150}
+  ],
+  "cost": "No currency cost returned by provider; not estimated",
+  "notProvenByThisRun": ["Live V3 deployment", "real-client ingestion", "production summary/enrich schema against the real model", "full project indexing", "production credential/service provisioning"]
+}
