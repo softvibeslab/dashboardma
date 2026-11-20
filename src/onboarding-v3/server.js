@@ -13,7 +13,9 @@ import {v3AzureLinks,snapshotUrl,importLinkedProposal} from './azure-links.js';
 import {HermesEnrichment,assertGeneration,applyEnrichment,failure} from '../onboarding-v2/hermes-enrichment.js';
 import {brokerTransport} from '../onboarding-v2/hermes-broker.js';
 import {DocumentaryAI,currentSeed,currentSummary,saveSeed,reviewSummary,applyDocumentary,derivatives} from './documentary-ai.js';
-import {initial,change,blockers,digest,objects,objectHash,currentDecision} from '../onboarding-v2/model.js';
+import {initial,change,blockers,digest,hash,objects,objectHash,currentDecision} from '../onboarding-v2/model.js';
+import {questionView,questionChange,questionBlockers} from './questions.js';
+import {QUESTION_SCHEMA,validQuestionContext} from './question-contract.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/state.json'),users=[],basePath='/dashboard/onboarding-v3',authMode='sso',sessionSecret='',publicOrigin='',classificationFile,catalogSourceFile='',directoryFile='',researchDirectory='',publicDirectory=false,staffingRequired=true,azureIntake=new AzureIntake(),hermesEnrichment=new HermesEnrichment(),documentaryAI=null}={}){
  azureIntake=v3AzureLinks(azureIntake);
@@ -30,7 +32,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
  const running=new Set();
  const persist=async state=>{await mkdir(path.dirname(dataFile),{recursive:true});const temp=dataFile+'.pending';await writeFile(temp,JSON.stringify(state,null,2),{mode:0o600});await rename(temp,dataFile);};
  const serial=run=>{const work=queue.then(run);queue=work.catch(()=>{});return work;};
- const executionView=e=>e?.status==='in-progress'&&!running.has(e.executionId)?{...e,status:'failed',code:'interrupted-no-retry'}:e;
+ const executionView=e=>{if(!e)return e;const interrupted=e.status==='in-progress'&&!running.has(e.executionId);return {...e,...(interrupted?{status:'failed',code:'interrupted-no-retry',progress:{...e.progress,stage:'interrupted'}}:{}),elapsedMs:Math.max(0,Date.parse(e.finishedAt||new Date().toISOString())-Date.parse(e.at))};};
  const send=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(data));};
  const body=async req=>{const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>1024*1024)throw Error('Solicitud demasiado grande.');chunks.push(chunk);}return JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');};
  const srv=http.createServer(async(req,res)=>{try{
@@ -76,10 +78,11 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
      if(options.warning)pending[2].push(options.warning);
      try{staffing.assertCurrent(state.phases[2],options);}catch(e){pending[2].push(e.message);}
     }
-    const continuity=continuityView(state);
+    const continuity=continuityView(state);pending[1].push(...questionBlockers(state,users));
+    continuity.handoff.pending.push(...questionBlockers(state,users).map(text=>({phase:1,text})));
     for(const text of pending[2])if(!continuity.handoff.pending.some(p=>p.phase===2&&p.text===text))continuity.handoff.pending.push({phase:2,text});
     continuity.handoff.ready=continuity.handoff.pending.length===0;
-    return {state,documentary:{enabled:Boolean(documentaryAI),seed:currentSeed(state),summary:currentSummary(state)||null,reviews:state.summaryReviews||[]},azureLinks:Object.fromEntries((state.azureIntakes||[]).map(i=>[i.sourceHash,snapshotUrl(i.snapshot)])),actor,continuity,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,hermes:{configured:await (documentaryAI||hermesEnrichment).available(),execution:executionView(state.aiExecutions?.at(-1))||null},integrations:{ai:state.hermesEnrichments?.length?'real':'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
+    return {state,questions:questionView(state,users),questionAI:{configured:Boolean(documentaryAI)&&await documentaryAI.available('question')},documentary:{enabled:Boolean(documentaryAI),seed:currentSeed(state),summary:currentSummary(state)||null,reviews:state.summaryReviews||[]},azureLinks:Object.fromEntries((state.azureIntakes||[]).map(i=>[i.sourceHash,snapshotUrl(i.snapshot)])),actor,continuity,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,hermes:{configured:await (documentaryAI||hermesEnrichment).available(),execution:executionView(state.aiExecutions?.at(-1))||null},integrations:{ai:state.hermesEnrichments?.length?'real':'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
    };
    if(url.pathname==='/api/staffing'){
     if(req.method!=='GET')return send(res,405,{error:'Método no permitido.'});
@@ -123,34 +126,46 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
     if(req.method!=='POST')return send(res,405,{error:'Método no permitido.'});
     const input=await body(req);await serial(async()=>{const state=await read();await persist(url.pathname.endsWith('/seed')?saveSeed(state,actor,input):reviewSummary(state,actor,input));});return send(res,200,await view());
    }
-   if(['/api/hermes/enrich','/api/ai/summary'].includes(url.pathname)){
+   if(url.pathname==='/api/questions/action'){
+    if(req.method!=='POST')return send(res,405,{error:'Método no permitido.'});
+    const input=await body(req);await serial(async()=>{await persist(questionChange(await read(),actor,input,users));});return send(res,200,await view());
+   }
+   if(['/api/hermes/enrich','/api/ai/summary','/api/questions/generate'].includes(url.pathname)){
     if(req.method!=='POST')return send(res,405,{error:'Método no permitido.'});
     if(!actor.roles.some(r=>['editor','coordinator'].includes(r)))throw failure(403,'forbidden');
     const input=await body(req);
-    const purpose=url.pathname.endsWith('/summary')?'summary':'enrich',service=purpose==='summary'?documentaryAI:(documentaryAI||hermesEnrichment);
+    const purpose=url.pathname.endsWith('/generate')?'question':url.pathname.endsWith('/summary')?'summary':'enrich',service=purpose!=='enrich'?documentaryAI:(documentaryAI||hermesEnrichment);
     if(!service)throw failure(503,'not-configured');
-    if(Object.keys(input).some(k=>!['revision','executionId',...(documentaryAI&&purpose==='enrich'?['includeSummary']:[])].includes(k))||(input.includeSummary!==undefined&&typeof input.includeSummary!=='boolean'))throw failure(400,'input-fields');
+    if(Object.keys(input).some(k=>!['revision','executionId',...(purpose==='question'?['id','instructions','sourceRefs']:[]),...(documentaryAI&&purpose==='enrich'?['includeSummary']:[])].includes(k))||(input.includeSummary!==undefined&&typeof input.includeSummary!=='boolean'))throw failure(400,'input-fields');
     if(documentaryAI){input.purpose=purpose;input.includeSummary=input.includeSummary===true;}
     let launch;
     const execution=await serial(async()=>{
      const before=await read();
      const existing=before.aiExecutions?.find(e=>e.executionId===input.executionId);
-     if(existing){if(existing.revision!==input.revision||existing.actor!==actor.id||(existing.purpose||'enrich')!==purpose||Boolean(existing.includeSummary)!==Boolean(input.includeSummary))throw failure(409,'idempotency-conflict');return executionView(existing);}
+     if(existing){if(existing.revision!==input.revision||existing.actor!==actor.id||(existing.purpose||'enrich')!==purpose||Boolean(existing.includeSummary)!==Boolean(input.includeSummary)||purpose==='question'&&existing.requestHash!==hash(input))throw failure(409,'idempotency-conflict');return executionView(existing);}
      const source=assertGeneration(before,actor,input);
-     if(!await service.available())throw failure(503,'not-configured');
+     if(!await service.available(purpose))throw failure(503,'not-configured');
+     if(purpose==='question'){
+      const q=questionView(before,users).find(q=>q.id===input.id);if(!q)throw failure(404,'question');
+      if(q.assignment.responder&&q.assignment.responder!==actor.id)throw failure(403,'forbidden-responder');
+      if(!validQuestionContext({id:q.id,text:q.question,currentAnswer:q.answer||'',instructions:input.instructions||'',sourceRefs:input.sourceRefs||[]},service.preview(before).sourceRefs))throw failure(400,'question-context');
+     }
      const derived=documentaryAI?derivatives(before,input.includeSummary):null;
      if(running.size)throw failure(429,'busy');
      if((before.aiExecutions?.length||0)>=100)throw failure(409,'execution-ledger-full');
      const entry={executionId:input.executionId,actor:actor.id,revision:input.revision,sourceHash:source.sourceHash,purpose,includeSummary:Boolean(input.includeSummary),...(derived?{seedVersion:derived.seed.version,seedHash:derived.seed.hash,summaryVersion:derived.reviewedSummary?.version||null}:{}),model:service.model,at:new Date().toISOString(),status:'in-progress'};
+     if(purpose==='question'){entry.questionId=input.id;entry.requestHash=hash(input);}
+     entry.progress={stage:'received',updatedAt:entry.at,events:[{stage:'received',at:entry.at}]};
      before.aiExecutions||=[];before.aiExecutions.push(entry);await persist(before);running.add(input.executionId);
      launch=async()=>{
       let result,error;
-      try{result=await service.generate(before,actor,input);}catch(e){error=e;}
+      const progress=stage=>serial(async()=>{const current=await read(),record=current.aiExecutions.find(e=>e.executionId===input.executionId);const at=new Date().toISOString();record.progress={stage,updatedAt:at,events:[...record.progress.events,{stage,at}]};await persist(current);});
+      try{result=await service.generate(before,actor,input,progress);await progress('persisting');}catch(e){error=e;}
       await serial(async()=>{
        let current=await read();let record=current.aiExecutions.find(e=>e.executionId===input.executionId);
        try{if(error)throw error;current=documentaryAI?applyDocumentary(current,result,actor):applyEnrichment(current,result,actor);record=current.aiExecutions.find(e=>e.executionId===input.executionId);Object.assign(record,{status:'real',inputHash:result.inputHash,outputHash:result.outputHash,version:current.revision});}
        catch(e){Object.assign(record,{status:'failed',code:['stale-revision','source-integrity','timeout','invalid-output'].includes(e.code)?e.code:'generation-failed'});}
-       record.finishedAt=new Date().toISOString();await persist(current);
+       record.finishedAt=new Date().toISOString();const stage=record.status==='real'?'completed':'failed';record.progress={stage,updatedAt:record.finishedAt,events:[...record.progress.events,{stage,at:record.finishedAt}]};await persist(current);
       });
      };
      return entry;
@@ -167,6 +182,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
     const action=await body(req);
     const run=async snapshot=>{
      const before=await read();
+     if(['review-context','prepare-spec','receipt','decide'].includes(action.type)&&questionBlockers(before,users).length)throw failure(409,'question-approvals-pending');
      if(staffingRequired){
       const options=await staffing.current(snapshot);
       if(action.type==='save'&&action.phase===2)action.data=staffing.resolve(action.data,options);
@@ -180,7 +196,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
    return send(res,404,{error:'Ruta no disponible.'});
   }
   if(!['GET','HEAD'].includes(req.method))return send(res,405,{error:'Método no permitido.'});
-  const names={'/documentary-ai.js':'documentary-ai.js','/azure-links.js':'azure-links.js','/continuity.js':'continuity.js','/':'index.html','/app.js':'app.js','/imported-context.js':'imported-context.js','/advanced':'advanced.html','/advanced.js':'advanced.js','/advanced.css':'advanced.css','/base.css':'base.css','/wizard.css':'wizard.css','/styles.css':'styles.css','/classifications':'classifications.html','/classifications/':'classifications.html','/classifications.js':'classifications.js','/classification-review.js':'classification-review.js','/classifications.css':'classifications.css'};const name=names[url.pathname];if(!name)return send(res,404,{error:'Solo onboarding V3.'});
+  const names={'/questions.js':'questions.js','/documentary-ai.js':'documentary-ai.js','/azure-links.js':'azure-links.js','/continuity.js':'continuity.js','/':'index.html','/app.js':'app.js','/imported-context.js':'imported-context.js','/advanced':'advanced.html','/advanced.js':'advanced.js','/advanced.css':'advanced.css','/base.css':'base.css','/wizard.css':'wizard.css','/styles.css':'styles.css','/classifications':'classifications.html','/classifications/':'classifications.html','/classifications.js':'classifications.js','/classification-review.js':'classification-review.js','/classifications.css':'classifications.css'};const name=names[url.pathname];if(!name)return send(res,404,{error:'Solo onboarding V3.'});
   let text=await readFile(path.join(root,'public/onboarding-v3',name));
   if(name.endsWith('.html'))text=Buffer.from(text.toString().replace(/(href|src)="\/(styles\.css|app\.js|advanced\.js|advanced\.css|base\.css|wizard\.css|classifications(?:\.css|\.js)?|)"/g,(_,attr,asset)=>`${attr}="${basePath}/${asset}"`));
   res.writeHead(200,{'content-type':name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html; charset=utf-8','cache-control':'no-store'});res.end(text);

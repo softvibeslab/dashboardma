@@ -54,8 +54,9 @@ MODEL = 'gpt-6.1-sol'
 def build_request(payload):
     if payload.get('model') != MODEL:
         raise ValueError('worker-model')
-    documentary = payload.get('schema') == 'onboarding.documentary.bounded.v2'
-    if documentary and payload.get('purpose') not in ('summary', 'enrich'):
+    question = payload.get('schema') == 'onboarding.questions.bounded.v1'
+    documentary = question or payload.get('schema') == 'onboarding.documentary.bounded.v2'
+    if documentary and (payload.get('purpose') != 'question' if question else payload.get('purpose') not in ('summary', 'enrich')):
         raise ValueError('worker-purpose')
     body = {
         'model': MODEL, 'instructions': payload['policy']['instructions'],
@@ -74,7 +75,10 @@ def build_request(payload):
         string={'type':'string'}
         cited=obj({'text':string,'sourceRefs':{'type':'array','items':string}})
         statements={'type':'array','items':cited}
-        if payload['purpose']=='summary':
+        if question:
+            strings={'type':'array','items':string}
+            schema=obj({'answer':string,'sourceRefs':strings,'assumptions':strings,'limitations':strings,'evidence':{'type':'string','enum':['supported','insufficient']}})
+        elif payload['purpose']=='summary':
             schema=obj({'businessNeed':cited,'scope':statements,'criteria':statements,'ambiguities':statements,'questions':statements,'attachments':{'type':'array','items':obj({'sourceRef':string,'contribution':string,'usage':string,'limitations':string})},'instruction':string})
         else:
             schema=obj({'context':string,'constraints':string,'questions':statements,'criteria':statements,'limitations':statements})
@@ -145,7 +149,7 @@ def main():
             return 0 if all(audit.values()) else 2
         if sys.argv[1:]==['--supervised'] and not all(audit_sandbox(check_credential=True).values()):
             raise ValueError()
-        if payload.get('schema') not in ('onboarding.hermes.bounded.v1','onboarding.documentary.bounded.v2') or payload.get('model')!=MODEL:
+        if payload.get('schema') not in ('onboarding.hermes.bounded.v1','onboarding.documentary.bounded.v2','onboarding.questions.bounded.v1') or payload.get('model')!=MODEL:
             raise ValueError()
         build_request(payload)
     except Exception:
