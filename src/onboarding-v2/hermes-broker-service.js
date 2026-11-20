@@ -1,6 +1,6 @@
 import http from 'node:http';
 import {instructions,refsFor,validateDocumentaryOutput} from './documentary-contract.js';
-import {QUESTION_SCHEMA,questionInstructions,validateQuestionOutput,validQuestionContext} from '../onboarding-v3/question-contract.js';
+import {QUESTION_SCHEMA,questionInstructions,validateQuestionOutput,validQuestionContext} from './question-contract.js';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {chmod,chown,mkdtemp,writeFile,rm} from 'node:fs/promises';

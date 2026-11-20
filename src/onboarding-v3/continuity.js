@@ -1,7 +1,8 @@
 import {hash,blockers,change,currentDecision,objects,objectHash,packageFor} from '../onboarding-v2/model.js';
+const questionProvenance=s=>Object.fromEntries(Object.entries(s.questionRecords||{}).map(([id,{suggestions,...record}])=>[id,record]));
 const fail=(status,message)=>{throw Object.assign(Error(message),{status});};
 // The existing documentary reviewer assignment/role is reused; this is not CP approval.
-export const contextHash=s=>hash({context:s.phases[1],sourceHash:s.azureIntakes?.at(-1)?.sourceHash||null,reviewer:s.phases[4].reviewer||null,epoch:s.audit.filter(a=>a.type==='save'&&a.phase===1||a.type==='azure.import'||a.type==='hermes.enrich').at(-1)?.revision||0});
+export const contextHash=s=>hash({context:s.phases[1],questionRecords:questionProvenance(s),sourceHash:s.azureIntakes?.at(-1)?.sourceHash||null,reviewer:s.phases[4].reviewer||null,epoch:s.audit.filter(a=>a.type==='save'&&a.phase===1||a.type==='azure.import'||a.type==='hermes.enrich').at(-1)?.revision||0});
 const inputHash=s=>hash({contextHash:contextHash(s),fronts:s.phases[2]});
 export function continuityView(s){
  const h=contextHash(s),review=s.contextReviews?.filter(r=>r.hash===h).at(-1),draft=s.specDrafts?.at(-1);
@@ -16,7 +17,7 @@ export function continuityView(s){
 export function continuityPackage(s){
  const v=continuityView(s);if(!v.handoff.ready)fail(409,'Entrega CP3 pendiente: '+v.handoff.pending.map(p=>p.text).join(' '));
  const base=packageFor(s),{hash:oldHash,...payload}=base;
- const provenance={contextHash:v.contextHash,review:v.review.record,spec:v.spec.record,sourceHash:s.azureIntakes?.at(-1)?.sourceHash||null,development:'not-executed'};
+ const provenance={contextHash:v.contextHash,questions:questionProvenance(s),review:v.review.record,spec:v.spec.record,sourceHash:s.azureIntakes?.at(-1)?.sourceHash||null,development:'not-executed'};
  payload.schema='mobilityapps.onboarding.v3';payload.files={...payload.files,'provenance.json':provenance};payload.manifest={...payload.manifest,'provenance.json':hash(provenance)};
  return {...payload,hash:hash(payload)};
 }
@@ -40,7 +41,7 @@ export function continuityChange(state,a,actor){
   for(const f of state.phases[2].fronts||[])sections.push({id:'SPEC-front-'+f.id,front:f.id,title:f.deliverable||f.id,body:trace+'\n\nPENDIENTE: especificación por frente.\nContrato de referencia: '+(f.contract||'PENDIENTE')});
   const s=change(state,{type:'save',phase:3,revision:state.revision,data:{sections,criteria:[]}},actor);
   s.specDrafts||=[];s.specDrafts.push({generation:'deterministic-template',version:s.revision,contextHash:v.contextHash,inputHash:inputHash(state),specHash:hash(s.phases[3]),sourceHash:source?.sourceHash||null,review:structuredClone(v.review.record),questions:structuredClone(p.questions||[]),decisions:structuredClone(state.decisions),actor:actor.id,at:s.audit.at(-1).at});
-  s.audit.at(-1).type='prepare-spec';return s;
+  s.specDrafts.at(-1).questionRecords=structuredClone(questionProvenance(state));s.audit.at(-1).type='prepare-spec';return s;
  }
  if(a.type!=='review-context')fail(400,'Acción de continuidad inválida.');
  if(!actor.roles.includes('reviewer')||actor.id!==state.phases[4].reviewer||actor.id===state.phases[1].owner)fail(403,'Se requiere el revisor documental asignado e independiente; coordinador no concede aprobación.');

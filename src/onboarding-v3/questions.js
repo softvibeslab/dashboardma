@@ -2,7 +2,7 @@ import {hash,digest,objects} from '../onboarding-v2/model.js';
 import {failure} from '../onboarding-v2/hermes-enrichment.js';
 import {sensitive} from '../onboarding-v2/documentary-contract.js';
 const fail=(status,code)=>{throw failure(status,code);};
-export const questionHash=(s,q)=>hash({question:q.question,blocking:q.blocking,source:s.azureIntakes?.at(-1)?.sourceHash||null,sources:s.phases[1].sources||[]});
+export const questionHash=(s,q)=>hash({question:q.question,blocking:q.blocking,source:s.azureIntakes?.at(-1)?.sourceHash||null,sourceContent:s.azureIntakes?.at(-1)?.snapshot?hash(s.azureIntakes.at(-1).snapshot):null,sources:s.phases[1].sources||[]});
 export function questionView(s,users=[]){return (s.phases[1].questions||[]).map(q=>{
  const record=s.questionRecords?.[q.id]||{},qh=questionHash(s,q),versions=record.versions||[];
  const last=versions.at(-1),matches=last&&last.text===q.answer&&last.rationale===q.rationale&&last.questionHash===qh;
@@ -13,8 +13,18 @@ export function questionView(s,users=[]){return (s.phases[1].questions||[]).map(
  const responder=users.find(u=>u.id===assignment.responder&&u.roles.includes('editor'));
  const reviewer=users.find(u=>u.id===assignment.reviewer&&u.roles.includes('reviewer')&&u.id!==assignment.responder);
  const status=decision?.type==='approve'&&responder&&reviewer?'approved':decision?.type==='return'?'returned':matches?last.status:q.answer?.trim()?'draft':'pending';
- return {...q,category:record.category||'product',area:record.area||'',suggestedRole:record.suggestedRole||'Pendiente de clasificación humana',assignment,assignmentStatus:responder?'confirmed':'pending',reviewerAvailable:Boolean(reviewer),questionHash:qh,answerHash,version,status,approval:status==='approved'?decision:null,versions:structuredClone(versions),decisions:structuredClone(record.decisions||[]),suggestions:structuredClone(record.suggestions||[])};
+ return {...q,category:record.category||'',area:record.area||'',suggestedRole:record.suggestedRole||'Pendiente de clasificación humana',assignment,assignmentStatus:responder?'confirmed':'pending',reviewerAvailable:Boolean(reviewer),questionHash:qh,answerHash,version,status,approval:status==='approved'?decision:null,versions:structuredClone(versions),decisions:structuredClone(record.decisions||[]),suggestions:structuredClone(record.suggestions||[])};
 });}
+export function syncLegacyResponses(before,next,actor){
+ for(const q of next.phases[1].questions||[]){
+  const old=before.phases[1].questions?.find(x=>x.id===q.id);
+  if(old&&old.answer===q.answer&&old.rationale===q.rationale&&questionHash(before,old)===questionHash(next,q))continue;
+  if(!q.answer&&!next.questionRecords?.[q.id])continue;
+  next.questionRecords||={};const r=next.questionRecords[q.id]||={versions:[],decisions:[],suggestions:[]},qh=questionHash(next,q);
+  r.versions.push({version:(r.versions.at(-1)?.version||0)+1,text:q.answer||'',rationale:q.rationale||'',status:q.answer?'draft':'pending',questionHash:qh,answerHash:hash({text:q.answer||'',rationale:q.rationale||'',questionHash:qh}),sourceHash:next.azureIntakes?.at(-1)?.sourceHash||null,actor:actor.id,at:new Date().toISOString(),origin:'legacy-save'});
+ }
+ return next;
+}
 export function questionBlockers(s,users){return questionView(s,users).filter(q=>q.blocking&&q.status!=='approved').map(q=>`${q.id}: respuesta y aprobación individual vigentes pendientes${q.reviewerAvailable?'':'; sin revisor independiente autorizado'}.`);}
 export function questionChange(state,actor,a,users){
  if(!actor?.authenticated)fail(401,'unauthenticated');if(a.revision!==state.revision)fail(409,'stale-revision');

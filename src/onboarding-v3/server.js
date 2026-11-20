@@ -15,8 +15,8 @@ import {HermesEnrichment,assertGeneration,applyEnrichment,failure} from '../onbo
 import {brokerTransport} from '../onboarding-v2/hermes-broker.js';
 import {DocumentaryAI,currentSeed,currentSummary,saveSeed,reviewSummary,applyDocumentary,derivatives} from './documentary-ai.js';
 import {initial,change,blockers,digest,hash,objects,objectHash,currentDecision} from '../onboarding-v2/model.js';
-import {questionView,questionChange,questionBlockers} from './questions.js';
-import {QUESTION_SCHEMA,validQuestionContext} from './question-contract.js';
+import {questionView,questionChange,questionBlockers,syncLegacyResponses} from './questions.js';
+import {QUESTION_SCHEMA,validQuestionContext} from '../onboarding-v2/question-contract.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/state.json'),users=[],basePath='/dashboard/onboarding-v3',authMode='sso',sessionSecret='',publicOrigin='',classificationFile,catalogSourceFile='',directoryFile='',researchDirectory='',publicDirectory=false,staffingRequired=true,azureIntake=new AzureIntake(),hermesEnrichment=new HermesEnrichment(),documentaryAI=null}={}){
  azureIntake=v3AzureLinks(azureIntake);
@@ -34,9 +34,12 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
  const persist=async state=>{await mkdir(path.dirname(dataFile),{recursive:true});const temp=dataFile+'.pending';await writeFile(temp,JSON.stringify(state,null,2),{mode:0o600});await rename(temp,dataFile);};
  const serial=run=>{const work=queue.then(run);queue=work.catch(()=>{});return work;};
  const executionView=e=>{if(!e)return e;const interrupted=e.status==='in-progress'&&!running.has(e.executionId);return {...e,...(interrupted?{status:'failed',code:'interrupted-no-retry',progress:{...e.progress,stage:'interrupted'}}:{}),elapsedMs:Math.max(0,Date.parse(e.finishedAt||new Date().toISOString())-Date.parse(e.at))};};
+ const startup=serial(async()=>{const state=await read();let recovered=false;for(const record of state.aiExecutions||[]){if(record.status!=='in-progress')continue;const at=new Date().toISOString();Object.assign(record,{status:'failed',code:'interrupted-no-retry',finishedAt:at,progress:{stage:'interrupted',updatedAt:at,events:[...(record.progress?.events||[]),{stage:'interrupted',at}]}});recovered=true;}if(recovered)await persist(state);});
+ startup.catch(()=>{}); // Requests fail closed if recovery/storage fails.
  const send=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(data));};
  const body=async req=>{const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>1024*1024)throw Error('Solicitud demasiado grande.');chunks.push(chunk);}return JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');};
  const srv=http.createServer(async(req,res)=>{try{
+  await startup;
   const url=new URL(req.url,'http://localhost');
   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
   if(basePath){if(url.pathname!==basePath&&!url.pathname.startsWith(basePath+'/'))return send(res,404,{error:'Fuera de la entrada V3.'});url.pathname=url.pathname.slice(basePath.length)||'/';}
@@ -80,11 +83,11 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
      if(options.warning)pending[2].push(options.warning);
      try{staffing.assertCurrent(state.phases[2],options);}catch(e){pending[2].push(e.message);}
     }
-    const continuity=continuityView(state);pending[1].push(...questionBlockers(state,users));
+    const continuity=continuityView(state);pending[1].push(...questionBlockers(state,users));continuity.contextBlockers.push(...questionBlockers(state,users));
     continuity.handoff.pending.push(...questionBlockers(state,users).map(text=>({phase:1,text})));
     for(const text of pending[2])if(!continuity.handoff.pending.some(p=>p.phase===2&&p.text===text))continuity.handoff.pending.push({phase:2,text});
     continuity.handoff.ready=continuity.handoff.pending.length===0;
-    return {state,questions:questionView(state,users),questionAI:{configured:Boolean(documentaryAI)&&await documentaryAI.available('question')},documentary:{enabled:Boolean(documentaryAI),seed:currentSeed(state),summary:currentSummary(state)||null,reviews:state.summaryReviews||[]},azureLinks:Object.fromEntries((state.azureIntakes||[]).map(i=>[i.sourceHash,snapshotUrl(i.snapshot)])),actor,continuity,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles,...displayIdentity(u,u.id===actor.id?actor:{})})),staffing:options,hermes:{configured:await (documentaryAI||hermesEnrichment).available(),execution:executionView(state.aiExecutions?.at(-1))||null},integrations:{ai:state.hermesEnrichments?.length?'real':'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
+    return {state,questions:questionView(state,users),questionAI:{engine:documentaryAI?.engine||{kind:'controlled-llm',label:'LLM controlado sin herramientas'},configured:Boolean(documentaryAI)&&await documentaryAI.available('question'),sourceRefs:documentaryAI&&state.azureIntakes?.length?documentaryAI.preview(state).sourceRefs:{}},documentary:{enabled:Boolean(documentaryAI),seed:currentSeed(state),summary:currentSummary(state)||null,reviews:state.summaryReviews||[]},azureLinks:Object.fromEntries((state.azureIntakes||[]).map(i=>[i.sourceHash,snapshotUrl(i.snapshot)])),actor,continuity,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles,...displayIdentity(u,u.id===actor.id?actor:{})})),staffing:options,hermes:{configured:await (documentaryAI||hermesEnrichment).available(),execution:executionView(state.aiExecutions?.at(-1))||null},integrations:{ai:state.hermesEnrichments?.length?'real':'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
    };
    if(url.pathname==='/api/staffing'){
     if(req.method!=='GET')return send(res,405,{error:'Método no permitido.'});
@@ -134,7 +137,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
    }
    if(['/api/hermes/enrich','/api/ai/summary','/api/questions/generate'].includes(url.pathname)){
     if(req.method!=='POST')return send(res,405,{error:'Método no permitido.'});
-    if(!actor.roles.some(r=>['editor','coordinator'].includes(r)))throw failure(403,'forbidden');
+    if(!actor.roles.includes('editor'))throw failure(403,'forbidden');
     const input=await body(req);
     const purpose=url.pathname.endsWith('/generate')?'question':url.pathname.endsWith('/summary')?'summary':'enrich',service=purpose!=='enrich'?documentaryAI:(documentaryAI||hermesEnrichment);
     if(!service)throw failure(503,'not-configured');
@@ -177,20 +180,23 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
    }
    if(url.pathname==='/api/state'&&req.method==='GET')return send(res,200,await view());
    if(url.pathname==='/api/package'&&req.method==='GET'){
-    const exportPackage=async snapshot=>{const state=await read();if(staffingRequired)staffing.assertCurrent(state.phases[2],await staffing.current(snapshot));const p=continuityPackage(state);res.setHeader('Content-Disposition','attachment; filename="onboarding-v3-package.json"');return send(res,200,p);};
+    const exportPackage=async snapshot=>{const state=await read();if(questionBlockers(state,users).length)throw failure(409,'question-approvals-pending');if(staffingRequired)staffing.assertCurrent(state.phases[2],await staffing.current(snapshot));const p=continuityPackage(state);res.setHeader('Content-Disposition','attachment; filename="onboarding-v3-package.json"');return send(res,200,p);};
     return staffingRequired?await catalog.withSnapshot(exportPackage):await exportPackage();
    }
    if(url.pathname==='/api/action'&&req.method==='POST'){
     const action=await body(req);
     const run=async snapshot=>{
      const before=await read();
-     if(['review-context','prepare-spec','receipt','decide'].includes(action.type)&&questionBlockers(before,users).length)throw failure(409,'question-approvals-pending');
+
      if(staffingRequired){
       const options=await staffing.current(snapshot);
       if(action.type==='save'&&action.phase===2)action.data=staffing.resolve(action.data,options);
       else if(['confirm','review','decide','receipt'].includes(action.type))staffing.assertCurrent(before.phases[2],options);
      }
-     const next=['review-context','prepare-spec','receipt'].includes(action.type)?continuityChange(before,action,actor):change(before,action,actor);await mkdir(path.dirname(dataFile),{recursive:true});const temp=dataFile+'.pending';await writeFile(temp,JSON.stringify(next,null,2),{mode:0o600});await rename(temp,dataFile);return view();
+     if(action.type==='save'&&action.phase===1){for(const q of questionView(before,users)){const candidate=action.data.questions?.find(x=>x.id===q.id);if(q.assignment.responder&&q.assignment.responder!==actor.id&&(!candidate||candidate.answer!==q.answer||candidate.rationale!==q.rationale))throw failure(403,'forbidden-responder');}}
+     const next=['review-context','prepare-spec','receipt'].includes(action.type)?continuityChange(before,action,actor):change(before,action,actor);
+     if(['review-context','prepare-spec','receipt','decide'].includes(action.type)&&questionBlockers(before,users).length)throw failure(409,'question-approvals-pending');
+     if(action.type==='save'&&action.phase===1)syncLegacyResponses(before,next,actor);await persist(next);return view();
     };
     const work=queue.then(()=>staffingRequired?catalog.withSnapshot(run):run());
     queue=work.catch(()=>{});return send(res,200,await work);

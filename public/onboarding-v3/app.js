@@ -12,7 +12,7 @@ const titles=['Enriquecimiento','Tecnologías y áreas','Especificaciones','Vali
 const notice=(s,error=false)=>{$('message').hidden=false;$('message').textContent=s;$('message').className='message'+(error?' error':'');};
 async function api(route,data){const r=await fetch(base+route,{method:data?'POST':'GET',headers:data?{'content-type':'application/json'}:{},...(data?{body:JSON.stringify(data)}:{})});const body=await r.json();if(!r.ok)throw Error(body.error||`HTTP ${r.status}`);return body;}
 async function run(fn){if(busy)return;busy=true;try{await fn();}catch(e){notice(e.message+' Recarga la versión del servidor si existe conflicto.',true);}finally{busy=false;}}
-const canEdit=()=>view.actor.roles.some(r=>['editor','coordinator'].includes(r));
+const canEdit=()=>view.actor.roles.includes('editor');
 const normalize=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase();
 function questions(){
  mountQuestions({host:$('questions'),view,draft,api,onChange:load,onError:s=>notice(s,true),onDirty:()=>{dirty=true;draftDirty=true;$('saveHint').textContent='Cambios sin guardar';},isDirty:()=>dirty,collect,poll:startPolling});

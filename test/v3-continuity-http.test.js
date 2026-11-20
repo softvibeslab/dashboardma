@@ -22,6 +22,11 @@ test('V3 HTTP continuity RBAC, hash409, questions409, no autoaccept and preserve
  assert.equal((await action(owner,{type:'prepare-spec'})).status,409);
  v=(await action(owner,{type:'save',phase:1,data:{...s.phases[1],questions:[{...s.phases[1].questions[0],answer:'QA',rationale:'Synthetic evidence'}]}})).body;
  assert.equal((await action(reviewer,{type:'review-context',hash:'stale'})).status,409);
+ assert.equal((await action(reviewer,{type:'review-context',hash:v.continuity.contextHash})).status,409,'Legacy answer alone is not individual approval');
+ const questionAction=async(cookie,a)=>{const r=await call('/api/questions/action',{revision:v.state.revision,id:'Q1',...a},cookie);assert.equal(r.status,200);v=r.body;};
+ await questionAction(owner,{type:'assign',responder:'owner',reviewer:'reviewer',category:'technical',area:'Web'});
+ await questionAction(owner,{type:'answer',text:'QA',rationale:'Synthetic evidence',status:'ready-review'});
+ await questionAction(reviewer,{type:'approve',version:v.questions[0].version,answerHash:v.questions[0].answerHash,questionHash:v.questions[0].questionHash});
  let result=await action(reviewer,{type:'review-context',hash:v.continuity.contextHash});assert.equal(result.status,200);v=result.body;
  assert.equal(v.continuity.review.status,'Revisado');assert.equal(v.state.phases[3].sections[0].id,'MANUAL');
  assert.equal((await action(reviewer,{type:'prepare-spec',confirmReplace:true})).status,403);

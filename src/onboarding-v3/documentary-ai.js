@@ -1,7 +1,7 @@
 import {hash,change} from '../onboarding-v2/model.js';
 import {assertGeneration,failure,applyEnrichment} from '../onboarding-v2/hermes-enrichment.js';
 import {sensitive,instructions,refsFor,validateDocumentaryOutput} from '../onboarding-v2/documentary-contract.js';
-import {QUESTION_SCHEMA,questionInstructions,validateQuestionOutput,validQuestionContext} from './question-contract.js';
+import {QUESTION_SCHEMA,questionInstructions,validateQuestionOutput,validQuestionContext} from '../onboarding-v2/question-contract.js';
 import {questionHash} from './questions.js';
 export const projectSnapshot=snapshot=>({items:[snapshot.root,...(snapshot.children||[]).filter(c=>c.fields)].map(item=>({id:item.id,revision:item.rev,title:String(item.fields?.['System.Title']||''),description:String(item.fields?.['System.Description']||''),acceptanceCriteria:String(item.fields?.['Microsoft.VSTS.Common.AcceptanceCriteria']||''),comments:(item.comments?.items||[]).map(c=>({id:c.id,version:c.version,text:String(c.text||'')})),attachments:(item.attachments||[]).map(a=>({name:String(a.name||''),status:a.status,...(a.status==='extracted'?{text:String(a.text||'')}:{})}))}))});
 export const sourceRefs=snapshot=>refsFor(projectSnapshot(snapshot));
@@ -32,8 +32,11 @@ export class DocumentaryAI{
  const {azureRevision,...preview}=this.preview(state,input.purpose==='question'?{purpose:'enrich'}:input);
  if(input.purpose==='question'){
   const q=state.phases[1].questions.find(q=>q.id===input.id);if(!q)throw failure(404,'question');
-  const question={id:q.id,text:q.question,currentAnswer:q.answer||'',instructions:input.instructions||'',sourceRefs:input.sourceRefs||[]};
+  const question={id:q.id,text:q.question,currentAnswer:q.answer||'',instructions:input.instructions||'',sourceRefs:input.sourceRefs?.length?input.sourceRefs:Object.keys(preview.sourceRefs).slice(0,8)};
   if(!validQuestionContext(question,preview.sourceRefs))throw failure(400,'question-context');
+  const selected=new Set(question.sourceRefs);
+  preview.snapshot.items=preview.snapshot.items.map(item=>{const prefix=`AZ-${item.id}-r${item.revision}`;return {...item,...Object.fromEntries(['title','description','acceptanceCriteria'].map(k=>[k,selected.has(prefix+':'+k)?item[k]:''])),comments:item.comments.filter(c=>selected.has(`${prefix}:comment-${c.id}-v${c.version}`)),attachments:item.attachments.map((a,i)=>selected.has(`${prefix}:attachment-${i}`)?a:{name:'',status:'not-selected'})};}).filter(item=>question.sourceRefs.some(r=>r.startsWith(`AZ-${item.id}-r${item.revision}:`)));
+  preview.sourceRefs=refsFor(preview.snapshot);
   preview.schema=QUESTION_SCHEMA;preview.purpose='question';preview.derivatives.question=question;
  }
  const request={...preview,executionId:input.executionId,model:this.model,policy:{tools:'none',maxInputBytes:48000,maxInputTokens:48000,maxOutputTokens:2000,maxOutputBytes:32000,timeoutMs:this.timeoutMs,retry:false,instructions:input.purpose==='question'?questionInstructions:instructions(input.purpose)}};
