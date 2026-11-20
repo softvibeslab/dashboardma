@@ -3,6 +3,7 @@ import {renderImportedContext} from './imported-context.js';
 import {mountContinuity} from './continuity.js';
 import {mountDocumentary,hasSeedChanges} from './documentary-ai.js';
 import {mountQuestions,renderProgress} from './questions.js';
+import {identityLabel,sessionLabel,personLabel} from './identity.js';
 const $=id=>document.getElementById(id);
 const base=new URL('.',import.meta.url).pathname.replace(/\/$/,'');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -21,13 +22,13 @@ function startPolling(){if(pollTimer)return;pollTimer=setInterval(()=>run(async(
 function render(){
  dirty=false;draftDirty=false;$('workspace').hidden=false;$('login').hidden=true;
  const p=view.state.phases[1];draft=structuredClone(p);draft.questions||=[{id:'Q-ENV',question:'¿Cuál es el entorno, URL y build afectados?',owner:view.actor.id,blocking:true,answer:'',rationale:''},{id:'Q-REPRO',question:'¿Qué pasos y evidencia permiten validar el requerimiento?',owner:view.actor.id,blocking:true,answer:'',rationale:''}];draft.sources||=[];draft.owner||=view.actor.id;
- $('sessionStatus').textContent=(view.actor.mode==='sso'?'Sesión corporativa':'Revisión local sintética')+' · '+view.actor.id;
+ $('sessionStatus').textContent=sessionLabel(view.actor);
  $('requirementMeta').textContent=(draft.title||'Nuevo requerimiento manual')+' · v'+view.state.revision;
  $('intake').open=!draft.title;
  $('stageList').innerHTML=titles.map((t,i)=>`<li ${i===0?'aria-current="step"':''}><a href="${base}/${i?'advanced':''}" data-stage="${i+1}">${esc(t)}</a></li>`).join('');
  document.querySelectorAll('[data-stage]').forEach(a=>a.onclick=e=>{if(!guard())return e.preventDefault();sessionStorage.setItem('v3-phase',a.dataset.stage);});
- $('owner').innerHTML=view.identities.map(u=>`<option value="${esc(u.id)}" ${u.id===draft.owner?'selected':''}>${esc(u.id)}</option>`).join('');
- if(!view.identities.some(u=>u.id===draft.owner))$('owner').add(new Option(draft.owner,draft.owner,true,true));
+ $('owner').innerHTML=view.identities.map(u=>`<option value="${esc(u.id)}" ${u.id===draft.owner?'selected':''}>${esc(identityLabel(u))}</option>`).join('');
+ if(!view.identities.some(u=>u.id===draft.owner))$('owner').add(new Option('Identidad no disponible',draft.owner,true,true));
  for(const k of ['title','context','constraints'])$(k).value=draft[k]||'';
  questions();
  let flowHost=$('continuityHost');if(!flowHost){flowHost=document.createElement('div');flowHost.id='continuityHost';$('draftForm').before(flowHost);}

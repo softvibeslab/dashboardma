@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 import {readFile,mkdir,writeFile,rename} from 'node:fs/promises';
 import {randomBytes,timingSafeEqual} from 'node:crypto';
 import {getSession} from '../auth.js';
+import {displayIdentity} from './identity.js';
 import {ClassificationStore} from '../onboarding-v2/classifications.js';
 import {ReadOnlyCatalogAdapter} from './catalog-adapter.js';
 import {continuityView,continuityChange,continuityPackage} from './continuity.js';
@@ -53,7 +54,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
    if(authMode!=='local-review')return send(res,403,{error:'Login local deshabilitado en SSO.',loginUrl});
    const {token}=await body(req);const user=users.find(u=>typeof token==='string'&&typeof u.token==='string'&&token.length>=16&&Buffer.byteLength(token)===Buffer.byteLength(u.token)&&timingSafeEqual(Buffer.from(token),Buffer.from(u.token)));
    if(!user)return send(res,401,{error:'Clave de revisión inválida. No es login corporativo.'});
-   const key=randomBytes(32).toString('hex');sessions.set(key,{id:user.id,roles:user.roles,...(user.azureIdentityKey?{azureIdentityKey:user.azureIdentityKey}:{}),authenticated:true,mode:'local-review',expires:Date.now()+4*3600000});
+   const key=randomBytes(32).toString('hex');sessions.set(key,{id:user.id,roles:user.roles,...(user.azureIdentityKey?{azureIdentityKey:user.azureIdentityKey}:{}),...displayIdentity(user),authenticated:true,mode:'local-review',expires:Date.now()+4*3600000});
    res.setHeader('set-cookie',`v3_session=${key}; Path=${basePath||'/'}; HttpOnly; SameSite=Strict; Max-Age=14400${expectedOrigin.startsWith('https:')?'; Secure':''}`);return send(res,200,{ok:true});
   }
   if(url.pathname.startsWith('/api/')){
@@ -62,11 +63,12 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
     let session;try{session=getSession(req,{enabled:true,sessionSecret});}catch{session=null;}
     if(!session?.tid||!session?.oid)return send(res,401,{error:'Sesión corporativa requerida.',loginUrl});
     const user=users.find(u=>u.tid===session.tid&&u.oid===session.oid);
-    if(url.pathname==='/api/access'&&req.method==='GET')return send(res,200,{mode:'sso',assigned:Boolean(user),identity:{tid:session.tid,oid:session.oid,name:session.name||'',email:session.email||''}});
+    if(url.pathname==='/api/access'&&req.method==='GET')return send(res,200,{mode:'sso',assigned:Boolean(user),actor:user?{id:user.id,roles:user.roles,mode:'sso',authenticated:true,...displayIdentity(user,session)}:null,identity:{tid:session.tid,oid:session.oid,...displayIdentity(user,session)}});
     if(!user)return send(res,403,{error:'Identidad autenticada sin asignación RBAC V3. Solicita acceso al coordinador.'});
-    actor={id:user.id,roles:user.roles,...(user.azureIdentityKey?{azureIdentityKey:user.azureIdentityKey}:{}),authenticated:true,mode:'sso',name:session.name||user.id};
+    actor={id:user.id,roles:user.roles,...(user.azureIdentityKey?{azureIdentityKey:user.azureIdentityKey}:{}),authenticated:true,mode:'sso',...displayIdentity(user,session)};
    }else actor=sessions.get(key);
    if(!actor||actor.expires<Date.now())return send(res,401,{error:'Identificación requerida. Revisión local, no autenticación corporativa.'});
+   if(url.pathname==='/api/access'&&req.method==='GET')return send(res,200,{mode:actor.mode,assigned:true,actor,identity:{name:actor.name,email:actor.email}});
    if(url.pathname==='/api/logout'&&req.method==='POST'){
     if(authMode==='sso')return send(res,200,{logoutUrl:'/dashboard/auth/logout'});
     sessions.delete(key);res.setHeader('set-cookie',`v3_session=; Path=${basePath||'/'}; HttpOnly; SameSite=Strict; Max-Age=0`);return send(res,200,{ok:true});
@@ -82,15 +84,15 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
     continuity.handoff.pending.push(...questionBlockers(state,users).map(text=>({phase:1,text})));
     for(const text of pending[2])if(!continuity.handoff.pending.some(p=>p.phase===2&&p.text===text))continuity.handoff.pending.push({phase:2,text});
     continuity.handoff.ready=continuity.handoff.pending.length===0;
-    return {state,questions:questionView(state,users),questionAI:{configured:Boolean(documentaryAI)&&await documentaryAI.available('question')},documentary:{enabled:Boolean(documentaryAI),seed:currentSeed(state),summary:currentSummary(state)||null,reviews:state.summaryReviews||[]},azureLinks:Object.fromEntries((state.azureIntakes||[]).map(i=>[i.sourceHash,snapshotUrl(i.snapshot)])),actor,continuity,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles})),staffing:options,hermes:{configured:await (documentaryAI||hermesEnrichment).available(),execution:executionView(state.aiExecutions?.at(-1))||null},integrations:{ai:state.hermesEnrichments?.length?'real':'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
+    return {state,questions:questionView(state,users),questionAI:{configured:Boolean(documentaryAI)&&await documentaryAI.available('question')},documentary:{enabled:Boolean(documentaryAI),seed:currentSeed(state),summary:currentSummary(state)||null,reviews:state.summaryReviews||[]},azureLinks:Object.fromEntries((state.azureIntakes||[]).map(i=>[i.sourceHash,snapshotUrl(i.snapshot)])),actor,continuity,hash:digest(state),blockers:pending,objects:objects(state).map(object=>({object,hash:objectHash(state,object),decision:currentDecision(state,object)||null})),identities:users.map(u=>({id:u.id,roles:u.roles,...displayIdentity(u,u.id===actor.id?actor:{})})),staffing:options,hermes:{configured:await (documentaryAI||hermesEnrichment).available(),execution:executionView(state.aiExecutions?.at(-1))||null},integrations:{ai:state.hermesEnrichments?.length?'real':'not-run',azure:azureIntake.configured()?'read-only-intake':staffingRequired?'snapshot-classification-candidates':'not-connected',azureIntake:azureIntake.configured(),azurePublication:'pending-disabled',repositories:'not-read'}};
    };
    if(url.pathname==='/api/staffing'){
     if(req.method!=='GET')return send(res,405,{error:'Método no permitido.'});
-    return send(res,200,staffingRequired?await staffing.current():{required:false});
+    return send(res,200,{...(staffingRequired?await staffing.current():{required:false}),actor});
    }
    if(url.pathname==='/api/classifications'){
     try{
-     const response=catalogState=>({catalog:catalogState,canManage:!catalogSourceFile&&actor.roles.includes('coordinator'),sourceConfigured:Boolean(directoryFile),researchConfigured:Boolean(researchDirectory),actor:{id:actor.id,mode:actor.mode}});
+     const response=catalogState=>({catalog:catalogState,canManage:!catalogSourceFile&&actor.roles.includes('coordinator'),sourceConfigured:Boolean(directoryFile),researchConfigured:Boolean(researchDirectory),actor});
      if(req.method==='GET')return send(res,200,response(await catalog.view()));
      if(req.method==='POST')return send(res,200,response(await catalog.act(await body(req),actor)));
      return send(res,405,{error:'Método no permitido.'});
@@ -196,7 +198,7 @@ export function createV3Server({dataFile=path.join(root,'data/onboarding-v3/stat
    return send(res,404,{error:'Ruta no disponible.'});
   }
   if(!['GET','HEAD'].includes(req.method))return send(res,405,{error:'Método no permitido.'});
-  const names={'/questions.js':'questions.js','/documentary-ai.js':'documentary-ai.js','/azure-links.js':'azure-links.js','/continuity.js':'continuity.js','/':'index.html','/app.js':'app.js','/imported-context.js':'imported-context.js','/advanced':'advanced.html','/advanced.js':'advanced.js','/advanced.css':'advanced.css','/base.css':'base.css','/wizard.css':'wizard.css','/styles.css':'styles.css','/classifications':'classifications.html','/classifications/':'classifications.html','/classifications.js':'classifications.js','/classification-review.js':'classification-review.js','/classifications.css':'classifications.css'};const name=names[url.pathname];if(!name)return send(res,404,{error:'Solo onboarding V3.'});
+  const names={'/identity.js':'identity.js','/questions.js':'questions.js','/documentary-ai.js':'documentary-ai.js','/azure-links.js':'azure-links.js','/continuity.js':'continuity.js','/':'index.html','/app.js':'app.js','/imported-context.js':'imported-context.js','/advanced':'advanced.html','/advanced.js':'advanced.js','/advanced.css':'advanced.css','/base.css':'base.css','/wizard.css':'wizard.css','/styles.css':'styles.css','/classifications':'classifications.html','/classifications/':'classifications.html','/classifications.js':'classifications.js','/classification-review.js':'classification-review.js','/classifications.css':'classifications.css'};const name=names[url.pathname];if(!name)return send(res,404,{error:'Solo onboarding V3.'});
   let text=await readFile(path.join(root,'public/onboarding-v3',name));
   if(name.endsWith('.html'))text=Buffer.from(text.toString().replace(/(href|src)="\/(styles\.css|app\.js|advanced\.js|advanced\.css|base\.css|wizard\.css|classifications(?:\.css|\.js)?|)"/g,(_,attr,asset)=>`${attr}="${basePath}/${asset}"`));
   res.writeHead(200,{'content-type':name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':'text/html; charset=utf-8','cache-control':'no-store'});res.end(text);
