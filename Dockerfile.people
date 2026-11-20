@@ -1,0 +1,13 @@
+FROM node:24-alpine
+ARG REVISION
+LABEL org.opencontainers.image.revision=$REVISION
+WORKDIR /app
+COPY --chown=node:node package.json ./
+COPY --chown=node:node src/auth.js ./src/auth.js
+COPY --chown=node:node src/people ./src/people
+COPY --chown=node:node public/people ./public/people
+USER node
+ENV PEOPLE_HOST=0.0.0.0 PEOPLE_PORT=4195 PEOPLE_DATA_FILE=/app/data/people.json PEOPLE_ROLES_FILE=/run/people/roles.json PEOPLE_DIRECTORY_FILE=/run/people/source/azure-directory.json PEOPLE_PUBLIC_ORIGIN=https://iamobilityappsinc.com
+EXPOSE 4195
+HEALTHCHECK --interval=15s --timeout=4s --start-period=5s CMD node -e "fetch('http://127.0.0.1:4195/dashboard/people/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node","src/people/server.js"]

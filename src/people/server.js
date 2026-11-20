@@ -1,0 +1,23 @@
+import http from 'node:http';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {readFile} from 'node:fs/promises';
+import {getSession} from '../auth.js';
+import {PeopleStore,fail} from './store.js';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
+const base='/dashboard/people';
+const loginUrl='/dashboard/auth/login?returnTo='+encodeURIComponent(base+'/');
+export function createPeopleServer({directoryFile,dataFile,users=[],sessionSecret,publicOrigin=''}={}){
+ if(!sessionSecret||!directoryFile||!dataFile)throw Error('People requiere sesión y rutas privadas explícitas.');
+ const directory=async()=>{const s=JSON.parse(await readFile(directoryFile,'utf8'));if(s.source!=='azure-devops-snapshot'||!Number.isFinite(Date.parse(s.syncedAt))||!Array.isArray(s.users)||s.users.length>10000||new Set(s.users.map(u=>u.id)).size!==s.users.length)throw Error('source');return {source:s.source,syncedAt:s.syncedAt,coverage:'Identidades presentes en la copia Azure configurada; no garantiza todo el tenant ni sincronización en vivo.',users:s.users.map(u=>({id:u.id,name:u.name&&u.name!==u.id?u.name:'Nombre no disponible',email:u.email||'',projects:u.projects||[]}))};};
+ const store=new PeopleStore(dataFile);const state=()=>store.read();
+ const body=async req=>{let raw='';for await(const c of req){raw+=c;if(Buffer.byteLength(raw)>65536)fail('Solicitud demasiado grande.',413);}try{return JSON.parse(raw);}catch{fail('JSON inválido.');}};
+ const send=(res,status,value)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8'});res.end(JSON.stringify(value));};
+ return http.createServer(async(req,res)=>{try{const url=new URL(req.url,'http://localhost');res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('X-Robots-Tag','noindex, nofollow');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");if(url.pathname!==base&&!url.pathname.startsWith(base+'/'))return send(res,404,{error:'Ruta no disponible.'});const p=url.pathname.slice(base.length)||'/';
+ if(req.method!=='GET'&&req.headers.origin!==(publicOrigin||`http://${req.headers.host}`))return send(res,403,{error:'Origen no permitido.'});
+ if(p==='/api/health'&&req.method==='GET')return send(res,200,{ok:true,service:'people',schema:'people.v1'});
+ if(p.startsWith('/api/')){let session;try{session=getSession(req,{enabled:true,sessionSecret});}catch{}if(!session?.tid||!session?.oid)return send(res,401,{error:'Inicia sesión corporativa para consultar personas.',loginUrl});const u=users.find(u=>u.tid===session.tid&&u.oid===session.oid);if(!u||!u.roles?.length)return send(res,403,{error:'La cuenta no tiene acceso asignado al dashboard.'});const actor={id:u.id,name:session.name||u.name||'Nombre no disponible',email:session.email||u.email||'',roles:u.roles};if(p==='/api/state'&&req.method==='GET')return send(res,200,{directory:await directory(),permissions:(await directory()).users.map(p=>{const linked=users.filter(u=>u.azureIdentityKey===p.id);return {id:p.id,mapped:linked.length===1,roles:linked.length===1?linked[0].roles:[]};}),state:await state(),actor,canManage:u.roles.includes('coordinator'),catalogEndpoint:'/dashboard/onboarding-v3/api/classifications'});if(p==='/api/action'&&req.method==='POST'){const next=await store.act(await body(req),actor,await directory());return send(res,200,{state:next});}return send(res,404,{error:'Ruta no disponible.'});}
+ if(req.method!=='GET')return send(res,405,{error:'Método no permitido.'});const assets={'/':'index.html','/index.html':'index.html','/app.js':'app.js','/styles.css':'styles.css'};if(!assets[p])return send(res,404,{error:'Ruta no disponible.'});res.writeHead(200,{'content-type':p.endsWith('.js')?'text/javascript':p.endsWith('.css')?'text/css':'text/html; charset=utf-8'});res.end(await readFile(path.join(root,'public/people',assets[p])));
+ }catch(e){send(res,e.status||503,{error:e.status?e.message:'Fuente o almacenamiento privado no disponible. Recarga o solicita revisión al operador.'});}});
+}
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){const users=JSON.parse(await readFile(process.env.PEOPLE_ROLES_FILE,'utf8'));createPeopleServer({users,directoryFile:process.env.PEOPLE_DIRECTORY_FILE,dataFile:process.env.PEOPLE_DATA_FILE,sessionSecret:process.env.SESSION_SECRET,publicOrigin:process.env.PEOPLE_PUBLIC_ORIGIN}).listen(Number(process.env.PEOPLE_PORT||4195),process.env.PEOPLE_HOST||'127.0.0.1');}

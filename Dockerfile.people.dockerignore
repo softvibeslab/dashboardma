@@ -1,0 +1,10 @@
+**
+!package.json
+!src/
+!src/auth.js
+!src/people/
+!src/people/**
+!public/
+!public/people/
+!public/people/**
+!Dockerfile.people
