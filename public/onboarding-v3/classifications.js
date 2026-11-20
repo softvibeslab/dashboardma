@@ -1,4 +1,5 @@
 import {renderReview} from './classification-review.js';
+import {sessionLabel} from './identity.js';
 const $=id=>document.getElementById(id);
 const base=new URL('.',import.meta.url).pathname.replace(/\/$/,'');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -16,7 +17,7 @@ function options(id,items,empty='Todos'){
 }
 function render(){
  const s=view.catalog;$('catalogWorkspace').hidden=false;$('accessHelp').hidden=true;
- $('catalogIdentity').textContent=`${view.actor.id} · ${view.actor.mode==='sso'?'Sesión corporativa':'Revisión local de prueba'}`;
+ $('catalogIdentity').textContent=sessionLabel(view.actor);
  $('catalogRevision').textContent=`Versión del catálogo: ${s.revision}`;
  $('readOnly').hidden=view.canManage;
  for(const id of ['newFront','newParticipation','syncDirectory'])$(id).hidden=!view.canManage;

@@ -2,6 +2,7 @@ import {resultIdentity,selectionSummary} from './azure-links.js';
 import {renderImportedContext} from './imported-context.js';
 import {mountContinuity} from './continuity.js';
 import {mountDocumentary,hasSeedChanges} from './documentary-ai.js';
+import {identityLabel,sessionLabel,personLabel} from './identity.js';
 const $=id=>document.getElementById(id);
 const base=new URL('.',import.meta.url).pathname.replace(/\/$/,'');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -13,19 +14,19 @@ async function run(fn){if(busy)return;busy=true;try{await fn();}catch(e){notice(
 const canEdit=()=>view.actor.roles.some(r=>['editor','coordinator'].includes(r));
 const normalize=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase();
 function questions(){
- $('questions').innerHTML='<h3>Preguntas y decisiones pendientes</h3>'+draft.questions.map((q,i)=>`<fieldset class="question"><legend>${esc(q.id)} · ${esc(q.question)}${q.blocking?' · Bloqueante':''}</legend><label>Respuesta<textarea data-answer="${i}" rows="2">${esc(q.answer)}</textarea></label><label>Motivo y fuente<input data-rationale="${i}" value="${esc(q.rationale)}"></label><span class="hint">Responsable: ${esc(q.owner)}</span></fieldset>`).join('');
+ $('questions').innerHTML='<h3>Preguntas y decisiones pendientes</h3>'+draft.questions.map((q,i)=>`<fieldset class="question"><legend>${esc(q.id)} · ${esc(q.question)}${q.blocking?' · Bloqueante':''}</legend><label>Respuesta<textarea data-answer="${i}" rows="2">${esc(q.answer)}</textarea></label><label>Motivo y fuente<input data-rationale="${i}" value="${esc(q.rationale)}"></label><span class="hint">Responsable: ${esc(personLabel(q.owner,view.identities))}</span></fieldset>`).join('');
  $('questions').querySelectorAll('input,textarea').forEach(e=>e.disabled=!canEdit());
 }
 function render(){
  dirty=false;draftDirty=false;$('workspace').hidden=false;$('login').hidden=true;
  const p=view.state.phases[1];draft=structuredClone(p);draft.questions||=[{id:'Q-ENV',question:'¿Cuál es el entorno, URL y build afectados?',owner:view.actor.id,blocking:true,answer:'',rationale:''},{id:'Q-REPRO',question:'¿Qué pasos y evidencia permiten validar el requerimiento?',owner:view.actor.id,blocking:true,answer:'',rationale:''}];draft.sources||=[];draft.owner||=view.actor.id;
- $('sessionStatus').textContent=(view.actor.mode==='sso'?'Sesión corporativa':'Revisión local sintética')+' · '+view.actor.id;
+ $('sessionStatus').textContent=sessionLabel(view.actor);
  $('requirementMeta').textContent=(draft.title||'Nuevo requerimiento manual')+' · v'+view.state.revision;
  $('intake').open=!draft.title;
  $('stageList').innerHTML=titles.map((t,i)=>`<li ${i===0?'aria-current="step"':''}><a href="${base}/${i?'advanced':''}" data-stage="${i+1}">${esc(t)}</a></li>`).join('');
  document.querySelectorAll('[data-stage]').forEach(a=>a.onclick=e=>{if(!guard())return e.preventDefault();sessionStorage.setItem('v3-phase',a.dataset.stage);});
- $('owner').innerHTML=view.identities.map(u=>`<option value="${esc(u.id)}" ${u.id===draft.owner?'selected':''}>${esc(u.id)}</option>`).join('');
- if(!view.identities.some(u=>u.id===draft.owner))$('owner').add(new Option(draft.owner,draft.owner,true,true));
+ $('owner').innerHTML=view.identities.map(u=>`<option value="${esc(u.id)}" ${u.id===draft.owner?'selected':''}>${esc(identityLabel(u))}</option>`).join('');
+ if(!view.identities.some(u=>u.id===draft.owner))$('owner').add(new Option('Identidad no disponible',draft.owner,true,true));
  for(const k of ['title','context','constraints'])$(k).value=draft[k]||'';
  questions();
  let flowHost=$('continuityHost');if(!flowHost){flowHost=document.createElement('div');flowHost.id='continuityHost';$('draftForm').before(flowHost);}
