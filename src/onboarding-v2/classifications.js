@@ -1,6 +1,7 @@
 import {readFile,writeFile,mkdir,rename,open,unlink} from 'node:fs/promises';
 import {dirname,resolve} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {publishCatalog} from './catalog-projection.js';
 import {importResearch} from './classification-review.js';
 
 export class CatalogError extends Error {
@@ -28,7 +29,7 @@ export function projectAzureDirectory(snapshot){
 }
 const queues=new Map();
 export class ClassificationStore {
- constructor(file,{directoryFile='',researchDirectory=''}={}){this.file=resolve(file);this.directoryFile=directoryFile;this.researchDirectory=researchDirectory;}
+ constructor(file,{directoryFile='',researchDirectory='',projectionFile=''}={}){this.file=resolve(file);this.directoryFile=directoryFile;this.researchDirectory=researchDirectory;this.projectionFile=projectionFile; if(projectionFile&&resolve(projectionFile)===this.file)throw Error('La proyección debe estar separada del catálogo canónico.');}
  get queue(){return queues.get(this.file)||Promise.resolve();}
  set queue(value){queues.set(this.file,value);}
  async view(){try{return JSON.parse(await readFile(this.file,'utf8'));}catch(e){if(e.code==='ENOENT')return empty();throw e;}}
@@ -52,7 +53,7 @@ export class ClassificationStore {
   try{return await callback();}finally{await lock.close();await unlink(this.file+'.lock');}
  }
  async withSnapshot(callback){
-  const work=this.queue.then(()=>this.exclusive(async()=>callback(await this.view())));
+  const work=this.queue.then(()=>this.exclusive(async()=>{const state=await this.view();await publishCatalog(state,this.projectionFile);return callback(state);}));
   this.queue=work.catch(()=>{});return work;
  }
  async act(action,actor){
@@ -152,7 +153,7 @@ export class ClassificationStore {
    s.revision++;
    s.audit.push({id:randomUUID(),type:action.type,recordId,actor:actor.id,at:now,revision:s.revision,before,after});
    await mkdir(dirname(this.file),{recursive:true});const tmp=this.file+'.'+randomUUID()+'.pending';
-   await writeFile(tmp,JSON.stringify(s,null,2),{mode:0o600});await rename(tmp,this.file);return s;
+   await writeFile(tmp,JSON.stringify(s,null,2),{mode:0o600});await rename(tmp,this.file);try{await publishCatalog(s,this.projectionFile);}catch(e){e.committedRevision=s.revision;e.message='El catálogo quedó guardado en revisión '+s.revision+'; la proyección está pendiente. Recarga antes de reintentar.';throw e;}return s;
   });
  }
 }

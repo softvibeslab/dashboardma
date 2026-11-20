@@ -5,6 +5,7 @@ import {readFile,mkdir,writeFile,rename} from 'node:fs/promises';
 import {randomBytes,timingSafeEqual} from 'node:crypto';
 import {getSession} from '../auth.js';
 import {ClassificationStore} from './classifications.js';
+import {peopleCatalogView,peopleCatalogAction} from './people-catalog.js';
 import {StaffingService} from './staffing.js';
 import {AzureIntake,azureIntakeFromEnv} from './azure-intake.js';
 import {importProposal} from './azure-proposal.js';
@@ -12,8 +13,9 @@ import {HermesEnrichment,assertGeneration,applyEnrichment,failure} from './herme
 import {brokerTransport} from './hermes-broker.js';
 import {initial,change,blockers,digest,objects,objectHash,currentDecision,packageFor} from './model.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
-export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/state.json'),users=[],basePath='',authMode='local-review',sessionSecret='',publicOrigin='',classificationFile,directoryFile='',researchDirectory='',publicDirectory=false,staffingRequired=false,azureIntake=new AzureIntake(),hermesEnrichment=new HermesEnrichment()}={}){
- const catalog=new ClassificationStore(classificationFile||path.join(path.dirname(dataFile),'classifications.json'),{directoryFile,researchDirectory});
+export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/state.json'),users=[],basePath='',authMode='local-review',sessionSecret='',publicOrigin='',classificationFile,directoryFile='',projectionFile='',researchDirectory='',publicDirectory=false,staffingRequired=false,azureIntake=new AzureIntake(),hermesEnrichment=new HermesEnrichment()}={}){
+ const catalog=new ClassificationStore(classificationFile||path.join(path.dirname(dataFile),'classifications.json'),{directoryFile,researchDirectory,projectionFile});
+ const startup=projectionFile?catalog.withSnapshot(()=>{}):Promise.resolve();startup.catch(()=>{});
  const staffing=new StaffingService(catalog,{directoryFile,identities:users});
  if(basePath&&!/^\/[a-zA-Z0-9/_-]+$/.test(basePath))throw Error('V2_BASE_PATH inválido.');
  basePath=basePath.replace(/\/$/,'');
@@ -30,7 +32,7 @@ export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/stat
  const send=(res,status,data)=>{res.writeHead(status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff'});res.end(JSON.stringify(data));};
  const body=async req=>{const chunks=[];let size=0;for await(const chunk of req){size+=chunk.length;if(size>1024*1024)throw Error('Solicitud demasiado grande.');chunks.push(chunk);}return JSON.parse(Buffer.concat(chunks).toString('utf8')||'{}');};
  const srv=http.createServer(async(req,res)=>{try{
-  const url=new URL(req.url,'http://localhost');
+  await startup;const url=new URL(req.url,'http://localhost');
   res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
   if(basePath){if(url.pathname!==basePath&&!url.pathname.startsWith(basePath+'/'))return send(res,404,{error:'Fuera de la entrada V2.'});url.pathname=url.pathname.slice(basePath.length)||'/';}
   const expectedOrigin=publicOrigin||`http://${req.headers.host}`;
@@ -77,6 +79,16 @@ export function createV2Server({dataFile=path.join(root,'data/onboarding-v2/stat
    if(url.pathname==='/api/staffing'){
     if(req.method!=='GET')return send(res,405,{error:'Método no permitido.'});
     return send(res,200,staffingRequired?await staffing.current():{required:false});
+   }
+   if(url.pathname==='/api/people-catalog'){
+    try{
+     if(req.method==='POST'){
+      if(!actor.roles.includes('coordinator'))return send(res,403,{error:'Rol coordinator requerido.'});
+      if(!projectionFile)return send(res,503,{error:'Proyección canónica no configurada.'});
+      await catalog.act(peopleCatalogAction(await body(req)),actor);
+     }else if(req.method!=='GET')return send(res,405,{error:'Método no permitido.'});
+     return send(res,200,await catalog.withSnapshot(s=>peopleCatalogView(s,{actor,users,projectionFile})));
+    }catch(e){return send(res,e.status||503,{error:e.status?e.message:'Catálogo privado no disponible.',...(e.committedRevision!==undefined?{committed:true,revision:e.committedRevision}:{})});}
    }
    if(url.pathname==='/api/classifications'){
     try{
@@ -172,6 +184,6 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
  const users=configFile?JSON.parse(await readFile(configFile,'utf8')):[];
  const hermesEnrichment=new HermesEnrichment({model:process.env.V2_HERMES_MODEL||'',transport:brokerTransport({socketPath:process.env.V2_HERMES_BROKER_SOCKET||'',key:process.env.V2_HERMES_BROKER_KEY||'',approved:process.env.V2_HERMES_AUTHORIZED==='true'})});
  const port=Number(process.env.V2_PORT||4191),host=process.env.V2_LISTEN_HOST||'127.0.0.1',basePath=process.env.V2_BASE_PATH||'',authMode=process.env.V2_AUTH_MODE||'local-review';
- const server=createV2Server({hermesEnrichment,dataFile:process.env.V2_DATA_FILE,users,basePath,authMode,sessionSecret:process.env.SESSION_SECRET,publicOrigin:process.env.V2_PUBLIC_ORIGIN,classificationFile:process.env.V2_CLASSIFICATION_FILE,directoryFile:process.env.V2_AZURE_DIRECTORY_FILE,researchDirectory:process.env.V2_CLASSIFICATION_RESEARCH_DIRECTORY,publicDirectory:process.env.V2_PUBLIC_DIRECTORY==='true',staffingRequired:process.env.V2_STAFFING_REQUIRED==='true',azureIntake:azureIntakeFromEnv()});
+ const server=createV2Server({hermesEnrichment,dataFile:process.env.V2_DATA_FILE,users,basePath,authMode,sessionSecret:process.env.SESSION_SECRET,publicOrigin:process.env.V2_PUBLIC_ORIGIN,classificationFile:process.env.V2_CLASSIFICATION_FILE,projectionFile:process.env.V2_CATALOG_PROJECTION_FILE,directoryFile:process.env.V2_AZURE_DIRECTORY_FILE,researchDirectory:process.env.V2_CLASSIFICATION_RESEARCH_DIRECTORY,publicDirectory:process.env.V2_PUBLIC_DIRECTORY==='true',staffingRequired:process.env.V2_STAFFING_REQUIRED==='true',azureIntake:azureIntakeFromEnv()});
  server.listen(port,host,()=>console.log(`Onboarding V2: http://${host}:${port}${basePath}/ (${authMode}; ${users.length} identidades configuradas)`));
 }
