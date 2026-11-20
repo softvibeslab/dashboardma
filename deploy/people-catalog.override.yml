@@ -1,0 +1,19 @@
+# Add after all six existing V2 layers. The canonical V2 writer is the only
+# publisher; V3 already reopens this directory's reduced catalog read-only.
+services:
+  onboarding-v2:
+    environment:
+      V2_CATALOG_PROJECTION_FILE: /run/v2/catalog-export/catalog.json
+    volumes:
+      - type: bind
+        source: ${V2_CATALOG_EXPORT_DIRECTORY:?Existing private V3 sanitized source directory}
+        target: /run/v2/catalog-export
+        bind:
+          create_host_path: false
+      # Mask the unrelated Azure source file read-only inside the writer.
+      - type: bind
+        source: ${V2_CATALOG_EXPORT_DIRECTORY:?Existing private V3 sanitized source directory}/azure-directory.json
+        target: /run/v2/catalog-export/azure-directory.json
+        read_only: true
+        bind:
+          create_host_path: false
