@@ -63,7 +63,17 @@ function candidates(){const s=view.staffing||{},name=normalize($('peopleFilter')
 }
 function collect(){for(const k of ['title','owner','context','constraints'])draft[k]=$(k).value;document.querySelectorAll('[data-answer]').forEach(e=>draft.questions[Number(e.dataset.answer)].answer=e.value);document.querySelectorAll('[data-rationale]').forEach(e=>draft.questions[Number(e.dataset.rationale)].rationale=e.value);return draft;}
 function guard(){return !dirty||confirm('Hay cambios sin guardar. ¿Descartarlos para continuar?');}
-async function load({preserveDraft=false}={}){const retained=preserveDraft&&draftDirty?structuredClone(collect()):null;view=await api('/api/state');render();if(retained){const changed=JSON.stringify(retained)!==JSON.stringify(draft);draft=retained;for(const k of ['title','owner','context','constraints'])$(k).value=draft[k]||'';questions();dirty=changed;draftDirty=changed;if(changed)$('saveHint').textContent='Cambios del borrador sin guardar; estado del servidor actualizado por separado';}}
+async function load({preserveDraft=false}={}){
+ const retained=preserveDraft&&draftDirty?structuredClone(collect()):null;
+ const retainedSeed=preserveDraft&&hasSeedChanges()?$('seedText')?.value:undefined;
+ const includeSummary=preserveDraft&&$('includeSummary')?.checked;
+ const disclosures=preserveDraft?[...document.querySelectorAll('#documentaryAI details')].map(d=>[d.querySelector('summary')?.textContent,d.open]):[];
+ view=await api('/api/state');render();
+ if(retained){const changed=JSON.stringify(retained)!==JSON.stringify(draft);draft=retained;for(const k of ['title','owner','context','constraints'])$(k).value=draft[k]||'';questions();dirty=changed;draftDirty=changed;if(changed)$('saveHint').textContent='Cambios del borrador sin guardar; estado del servidor actualizado por separado';}
+ if(retainedSeed!==undefined&&$('seedText')){$('seedText').value=retainedSeed;$('seedText').dispatchEvent(new Event('input'));}
+ if(includeSummary&&$('includeSummary')&&!$('includeSummary').disabled)$('includeSummary').checked=true;
+ for(const [label,open] of disclosures){const detail=[...document.querySelectorAll('#documentaryAI details')].find(d=>d.querySelector('summary')?.textContent===label);if(detail)detail.open=open;}
+}
 $('draftForm').oninput=e=>{if(!e.target.matches('[data-answer],[data-rationale],#title,#context,#constraints,#owner'))return;dirty=true;draftDirty=true;$('saveHint').textContent='Cambios sin guardar';};
 $('draftForm').onsubmit=e=>{e.preventDefault();run(async()=>{if(hasSeedChanges())throw Error('Guarda primero la semilla con su botón versionado');view=await api('/api/action',{type:'save',phase:1,revision:view.state.revision,data:collect()});render();notice('Nueva versión guardada. Puedes recargar o retomar más tarde.');});};
 $('addQuestion').onclick=()=>{collect();const question=prompt('Pregunta o decisión pendiente:');if(!question?.trim())return;draft.questions.push({id:'Q-'+crypto.randomUUID(),question:question.trim(),owner:view.actor.id,blocking:true,answer:'',rationale:''});questions();dirty=true;draftDirty=true;$('saveHint').textContent='Cambios sin guardar';};

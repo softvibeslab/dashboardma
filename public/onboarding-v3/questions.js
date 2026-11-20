@@ -1,6 +1,6 @@
 import {identityLabel,personLabel} from './identity.js';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const expanded=new Map(),guidance=new Map();let filters={category:'',area:'',owner:'',status:'',blocking:false,mine:false};
+const expanded=new Map(),guidance=new Map(),transient=new Map();let filters={category:'',area:'',owner:'',status:'',blocking:false,mine:false};
 const categories={technical:'Técnica',product:'Producto',commercial:'Comercial'};
 const statuses={pending:'Pendiente',draft:'Borrador','ready-review':'Lista para revisión',approved:'Aprobada',returned:'Devuelta'};
 export function mountQuestions({host,view,draft,api,onChange,onError,onDirty,isDirty,collect,poll}){
@@ -23,6 +23,7 @@ export function mountQuestions({host,view,draft,api,onChange,onError,onDirty,isD
   }).join('');
   host.querySelectorAll('[data-question]').forEach(card=>{
    const q=all.find(q=>q.id===card.dataset.question),id=q.id;
+   for(const field of ['category','area','role','responder','reviewer','return']){const input=card.querySelector('[data-'+field+']'),key=id+':'+field;if(transient.has(key))input.value=transient.get(key);input.addEventListener('input',()=>transient.set(key,input.value));}
    card.addEventListener('toggle',()=>expanded.set(id,card.open));
    card.querySelectorAll('[data-disclosure]').forEach(detail=>{const key=id+':'+detail.dataset.disclosure;if(expanded.has(key))detail.open=expanded.get(key);detail.addEventListener('toggle',()=>expanded.set(key,detail.open));});
    card.querySelector('[data-guidance]').oninput=e=>guidance.set(id,e.target.value);card.querySelector('[data-refs]').oninput=e=>guidance.set(id+':refs',e.target.value);
@@ -39,7 +40,7 @@ export function mountQuestions({host,view,draft,api,onChange,onError,onDirty,isD
      await api('/api/questions/generate',{revision:view.state.revision,id,executionId:crypto.randomUUID(),instructions:card.querySelector('[data-guidance]').value,sourceRefs:card.querySelector('[data-refs]').value.split(',').map(s=>s.trim()).filter(Boolean)});await onChange();poll();return;
     }
     const data=type==='assign'?{responder:card.querySelector('[data-responder]').value,reviewer:card.querySelector('[data-reviewer]').value,category:card.querySelector('[data-category]').value,area:card.querySelector('[data-area]').value,suggestedRole:card.querySelector('[data-role]').value}:{version:q.version,answerHash:q.answerHash,questionHash:q.questionHash,...(type==='return'?{reason:card.querySelector('[data-return]').value}:{})};
-    await api('/api/questions/action',{revision:view.state.revision,id,type,...data});await onChange();
+    await api('/api/questions/action',{revision:view.state.revision,id,type,...data});for(const field of ['category','area','role','responder','reviewer','return'])transient.delete(id+':'+field);await onChange();
    }));
    card.querySelectorAll('[data-incorporate]').forEach(button=>button.onclick=()=>{
     const s=q.suggestions.find(s=>s.executionId===button.dataset.incorporate);if(card.querySelector('[data-answer]').value.trim()&&!confirm('¿Reemplazar el texto local por la alternativa para editar? La versión guardada permanece en historial.'))return;
