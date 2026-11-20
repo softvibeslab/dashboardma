@@ -5,8 +5,9 @@ URL: `/dashboard/people/`. Start: `node src/people/server.js` with `SESSION_SECR
 ## Source and ownership
 - Azure identities are read-only from the private sanitized `azure-devops-snapshot`; preserve its original `syncedAt`. All snapshot identities are listed, including people without RBAC or classification. This coverage is not a claim of all tenant users or live sync.
 - People owns only a separate JSON document containing business areas, organizational responsibilities (`qa`, `product`, `business`), enabled/notes and append-only revisions/history linked to the stable Azure key. No identity creation, name/email edits, Azure writes, AI calls or access-role grants.
-- Existing onboarding fronts and developer/reviewer/support participation remain exclusively owned by `/dashboard/onboarding-v3/api/classifications`. The browser calls that exact authenticated same-origin API using its legitimate cookie. People never writes a V3/V2 file or proxies an invented authenticated identity.
-- Critical current compatibility limit: production V3 uses `ReadOnlyCatalogAdapter` with a reduced catalog projection. Its API reports `canManage:false`. The dashboard disables front/participation changes and explains why. Organizational metadata is still writable by coordinators. The integration test uses actual `createV3Server` with a writable fixture `ClassificationStore`, demonstrating direct canonical save → staffing without duplicate participation storage. It does NOT prove production propagation. Enabling the canonical V3 write service is a separately coordinated integration; this release does not alter V3 code/runtime/mounts or broker.
+- Existing onboarding fronts and developer/reviewer/support participation remain exclusively owned by the V2 ClassificationStore. The browser calls the bounded authenticated `/dashboard/onboarding-v2/api/people-catalog` using its legitimate same-origin cookie. The endpoint reuses the existing writer, validators, revision and audit; it cannot import identities/research or return raw research. People never writes V3/V2 files or proxies an invented identity.
+- V3 remains a read-only consumer. The canonical writer automatically exports a reduced staffing projection under the same catalog lock on startup/snapshot access and after every mutation. V3's unchanged ReadOnlyCatalogAdapter reopens the existing read-only directory mount, so no V3 restart is needed. Only the V2 writer receives the explicit export mount; source history/research/notes never enter the V3 projection. See docs/onboarding-v2/people-canonical-catalog.md for crash recovery, integrity and deployment boundaries.
+- After save, the browser rereads the writer, compares the exact reduced content/revision with V3 and verifies V3 staffing's revision/source date. It reports propagation as pending rather than claiming success if either consumer check fails. Revision conflict preserves the editor draft and requires explicit reload, which refreshes catalogue filters too.
 - The private full directory endpoint is not an expansion of the pre-existing public reduced directory. People has no anonymous personnel endpoint. HTML/assets contain no personnel values.
 
 ## Security and audit
@@ -22,15 +23,15 @@ URL: `/dashboard/people/`. Start: `node src/people/server.js` with `SESSION_SECR
 | Full snapshot directory and original date | real HTTP fixture tests; no RBAC filtering |
 | Area create/update/delete and organization audit | HTTP store tests; forbidden assigned-area delete |
 | Roles, origins, revision conflict, confirmation | HTTP negative tests |
-| Actual catalogue/staffing integration | Chromium against actual People + createV3Server, no route interception |
+| Actual catalogue/staffing integration | Chromium against actual People → createV2Server canonical writer → reduced persisted export → unchanged createV3Server read-only adapter/staffing; no route interception |
 | Name/email search, edit/save/reload, XSS, conflict draft retention | Chromium synthetic fixture |
 | Desktop/mobile | 1440px and 390px screenshots; exact width/scrollWidth assertions |
 | Live human login and real assignment | pending coordinator's own corporate session; no production cookie fabrication |
-| Production staffing propagation | blocked by existing V3 read-only projection, not declared complete |
+| Canonical propagation and stale selection | real writer/export/actual V3 adapter; stale token rejected after canonical update, reload and filters verified |
 
 Commands: `node --test test/people*.test.js`; `npm run check`; `npm run check:v3`; `node --test --test-concurrency=1`; `python3 -m unittest discover -s test -p '*_test.py'`.
 
 ## Publication and rollback
 Build a clean `git archive` of the reviewed full SHA using Dockerfile.people. Mount only SESSION_SECRET, current reduced roles and sanitized directory; a separate private writable named volume belongs to uid 1000. Back up the People volume and private runtime before updates; pin full OCI revision/image and retain hashes privately. Verify health, exact HTTPS assets, anonymous state 401 and invalid-Origin POST 403. Verify node readability and write/delete a non-personnel permission probe only. Never seed real organization assignments as deployment tests.
 
-Traefik priority 13000 matches only exact `/dashboard/people` or slash descendants. Independent service port 4195 exists only on the internal coolify network. Remove/roll back only the People service/image; never restore old personnel state over newer human decisions. No V1/V2/V3 restart or broker/systemd change is part of this deployment.
+Traefik priority 13000 matches only exact `/dashboard/people` or slash descendants. Independent service port 4195 exists only on the internal coolify network. Remove/roll back only the People service/image; never restore old personnel state over newer human decisions. The companion minimal V2 catalogue increment is built from the exact incumbent V2 release, preserving all six existing overlays and adding the explicit export overlay. V3, V1 and broker/systemd are not restarted or modified. People-owned metadata is preserved.
