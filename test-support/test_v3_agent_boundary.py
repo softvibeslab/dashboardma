@@ -14,6 +14,65 @@ class NativeBoundaryTest(unittest.TestCase):
         self.assertEqual(value['allowedTools'], ['authorized_context'])
         self.assertEqual(value['blockedTools'], ['terminal','read_file','write_file','execute_code','memory','session_search','delegate_task','web_search','skill_manage','tool_call'])
 
+    def test_question_native_fixture_excludes_even_poisoned_history(self):
+        import importlib.util,tempfile,os
+        spec=importlib.util.spec_from_file_location('question_broker',ROOT/'scripts/v3-hermes-agent-broker.py')
+        assert spec is not None and spec.loader is not None
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        scope={'actor':'fixture-editor','org':'synthetic','project':'alpha','caseId':'case-1'}
+        source={'id':'alpha-guide','org':'synthetic','project':'alpha','ref':'fixture-v1','kind':'repository','text':'Reviewed synthetic project guidance.'}
+        prompt={'purpose':'question','sourceRefs':{'AZ-900001-r1:title':{'kind':'title'}},'derivatives':{'question':{'id':'Q-ENV','currentAnswer':'Human baseline'}}}
+        request={'executionId':'native-fixture-question-01','scope':scope,'prompt':json.dumps(prompt),'inputHash':'a'*64,'sourceHash':'b'*64,'purpose':'question','contextKey':'c'*64,'historyPolicy':'none'}
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR','/root/.hermes/cache/scratch')) as directory:
+            service=module.Broker(pathlib.Path(directory),{'grants':[{**scope,'sourceHash':'b'*64}],'sources':[source]},real=False)
+            result=service.execute(request)
+            self.assertEqual(result['historyMessages'],0)
+            self.assertEqual(result['providerRequests'],0)
+            self.assertEqual(result['tools'][0]['status'],'executed')
+            output=json.loads(result['answer'])
+            self.assertEqual(output['documentary']['sourceRefs'],['AZ-900001-r1:title'])
+            self.assertIn('sintética',output['documentary']['answer'])
+            self.assertEqual(output['contextCitations'],['alpha-guide'])
+            service.db.execute('UPDATE sessions SET history=? WHERE scope=?',(json.dumps([{'role':'user','content':'UNSELECTED_OLD_SNAPSHOT_SENTINEL'},{'role':'assistant','content':'Excluded old answer'}]),result['sessionId']));service.db.commit()
+            again=service.execute({**request,'executionId':'native-fixture-question-02'})
+            self.assertEqual(again['historyMessages'],0)
+            self.assertEqual(json.loads(service.db.execute('SELECT history FROM sessions WHERE scope=?',(again['sessionId'],)).fetchone()[0]),[])
+            with self.assertRaisesRegex(ValueError,'input-invalid'):
+                service.execute({**request,'historyPolicy':'scoped'})
+            service.db.close()
+
+    def test_supervised_socket_restart_and_separate_shared_directory(self):
+        import tempfile,os,socket,subprocess,time,stat
+        with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR','/root/.hermes/cache/scratch')) as raw:
+            directory=pathlib.Path(raw);state=directory/'state';shared=directory/'socket';shared.mkdir(mode=0o710)
+            scope={'actor':'fixture-editor','org':'synthetic','project':'alpha','caseId':'case-1','sourceHash':'b'*64}
+            manifest=directory/'manifest.json';manifest.write_text(json.dumps({'grants':[scope],'sources':[{'id':'fixture-guide','org':'synthetic','project':'alpha','kind':'repository','ref':'fixture-v1','text':'Synthetic read-only context.'}]}));manifest.chmod(0o600)
+            key=directory/'key';key.write_text('fixture-mediator-key-for-private-tests');key.chmod(0o600)
+            path=shared/'agent.sock'
+            command=['python3',str(ROOT/'scripts/v3-hermes-agent-broker.py'),'--directory',str(state),'--socket-directory',str(shared),'--manifest',str(manifest),'--key-file',str(key)]
+            for restart in range(2):
+                if restart:
+                    stale=socket.socket(socket.AF_UNIX);stale.bind(str(path));stale.close()
+                child=subprocess.Popen(command,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
+                try:
+                    ready=False
+                    for _ in range(150):
+                        if child.poll() is not None:break
+                        try:
+                            with socket.socket(socket.AF_UNIX) as client:
+                                client.settimeout(.1);client.connect(str(path))
+                            ready=True;break
+                        except OSError:time.sleep(.05)
+                    self.assertTrue(ready,child.stderr.read() if child.poll() is not None else 'socket readiness timeout')
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode),0o660)
+                    self.assertEqual(stat.S_IMODE(state.stat().st_mode),0o700)
+                    self.assertEqual(stat.S_IMODE((state/'agent.sqlite').stat().st_mode),0o600)
+                    duplicate=subprocess.run(command,capture_output=True,text=True,timeout=10)
+                    self.assertNotEqual(duplicate.returncode,0)
+                finally:
+                    child.terminate();child.wait(timeout=10);child.stderr.close()
+                self.assertFalse(path.exists(),'Graceful supervisor stop must remove its own socket')
+
     def test_provider_adapter_preserves_upstream_ids_and_rebuilds_tool_schema(self):
         import importlib.util
         from unittest.mock import patch,MagicMock
@@ -49,11 +108,13 @@ class NativeBoundaryTest(unittest.TestCase):
         source={'id':'alpha-guide','org':'synthetic','project':'alpha','ref':'fixture-v1','kind':'repository','text':'Human review required.'}
         with tempfile.TemporaryDirectory(dir=os.environ.get('TMPDIR','/root/.hermes/cache/scratch')) as directory:
             service=broker.Broker(pathlib.Path(directory),{'grants':[{**scope,'sourceHash':'b'*64}],'sources':[source]},real=False)
-            request={'executionId':'fixture-execution-0001','scope':scope,'prompt':'Synthetic: what is required?','inputHash':'a'*64,'sourceHash':'b'*64}
+            request={'executionId':'fixture-execution-0001','scope':scope,'prompt':'Synthetic: what is required?','inputHash':'a'*64,'sourceHash':'b'*64,'purpose':'enrich','contextKey':'d'*64,'historyPolicy':'scoped'}
             result=service.execute(request)
             self.assertEqual(result['runtime'],'hermes-native-sealed-v1')
             self.assertEqual(result['tools'][0]['status'],'executed')
             self.assertEqual(result,service.execute(request))
+            with self.assertRaisesRegex(ValueError,'replay-conflict'):
+                service.execute({**request,'contextKey':'e'*64})
             self.assertEqual(service.session_count(),1)
             with self.assertRaisesRegex(ValueError,'replay-conflict'):
                 service.execute({**request,'prompt':'different'})
@@ -66,7 +127,8 @@ class NativeBoundaryTest(unittest.TestCase):
                 service.execute({**request,'sourceHash':'c'*64})
             # Reopen the same private store: replay returns the same result without inference.
             uncertain={**request,'executionId':'fixture-uncertain-0001'}
-            service.db.execute('INSERT INTO jobs VALUES (?,?,?,?,?,?)',(result['sessionId'],uncertain['executionId'],broker.digest(uncertain),'running',None,0))
+            job_scope=service.db.execute('SELECT scope FROM jobs WHERE id=?',(request['executionId'],)).fetchone()[0]
+            service.db.execute('INSERT INTO jobs VALUES (?,?,?,?,?,?)',(job_scope,uncertain['executionId'],broker.digest(uncertain),'running',None,0))
             service.db.commit()
             service.db.close()
             restarted=broker.Broker(pathlib.Path(directory),{'grants':[{**scope,'sourceHash':'b'*64}],'sources':[source]},real=False)

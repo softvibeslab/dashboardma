@@ -6,7 +6,7 @@ Base: `0f80bfcb5c2d4bf77132d572fcbef7c53909e779`. Rama: `feature/onboarding-v3-h
 
 **Hay ejecución real de `run_agent.AIAgent`, con una herramienta ejecutada y una respuesta de proveedor real sobre una fuente exclusivamente sintética.** No es una llamada LLM renombrada Hermes. Evidencia reducida del resultado observado: [`evidence/onboarding-v3-agent-real-probe.json`](evidence/onboarding-v3-agent-real-probe.json). Se realizaron dos peticiones de proveedor para un único turno de agente: selección de herramienta y respuesta posterior a su resultado. Uso reportado: 4012 tokens de entrada, 86 de salida, 4098 totales; coste monetario no disponible. Las regresiones posteriores usan inferencia determinista explícita para evitar costes redundantes.
 
-No está desplegado. No se cambian `server.js`, UI, broker vivo, perfiles, modelos globales, gateways, memorias, hooks ni servicios existentes. No se envían datos de clientes a IA. No se consulta Bocadeli/QueryGuard ni se añaden herramientas de consultas, escrituras Azure, aceptación, aprobación o concesión de roles.
+No está desplegado por esta rama. El candidato ahora integra cambios de `server.js` y UI para preguntas/progreso y selección por readiness; **no se modifican procesos, broker vivo, perfiles, modelos globales, gateways, memorias, hooks ni servicios existentes**. No se envían datos de clientes a IA. No se consulta Bocadeli/QueryGuard ni se añaden herramientas de consultas, escrituras Azure, aceptación, aprobación o concesión de roles.
 
 ## Ruta elegida y comprobada
 
@@ -85,27 +85,27 @@ const documentaryAI=new HermesAgentEngine({
 // Mantener toda la autenticación/RBAC/stateFile/serialización existentes.
 ```
 
-### Compatibilidad con la rama de preguntas
+### Integración de preguntas completada en este candidato
 
-Se inspeccionó **sin modificar** `/root/workspaces/dashboardma-onboarding-v3-question-workflow`, HEAD `5b19929fe16568ee1bb07c0a6089d62c1678e333`, limpio. Documentación real: `docs/onboarding-v3/question-workflow.md` y `question-workflow-qa.md`.
+Se fusiona el commit exacto `5b19929fe16568ee1bb07c0a6089d62c1678e333` en **este** worktree, sin modificar el worktree de preguntas/despliegue. El merge conserva ambos linajes de identidad (`0f80bfc` / cherry-pick `ee5404e`) sin volver a aplicar la corrección: los conflictos de `app.js` y `server.js` se resolvieron tomando las versiones de preguntas, pues la rama bridge no había cambiado esos archivos. La implementación de identidad no se duplica. Documentación del flujo incorporado: `docs/onboarding-v3/question-workflow.md` y `question-workflow-qa.md`.
 
-No se fusiona ni se vuelve a cherry-pickear identidad en esta rama. El adapter acepta el nuevo callback de progreso y, para `summary/enrich`, emite solo `context-prepared → waiting-model → validating` cuando ocurren. Persistencia/completado son responsabilidad del servidor. `engine.kind: hermes-agent` evita el fallback de etiqueta LLM cuando se integre explícitamente.
+`available('question')` comprueba readiness nativo. El handshake declara `summary/enrich/question`, `onboarding.documentary.bounded.v2`, `onboarding.questions.bounded.v1`, la herramienta única y la política `questionHistory: none`, `maxOriginalRefs: 8`. Proveedor real, aislamiento, commit y toolset deben coincidir; fixtures nunca activan el arranque de producción.
 
-**`available('question')` devuelve false.** El propósito por pregunta todavía no está implementado en este bridge; no se anuncia como operativo, no se cae al LLM legacy de forma encubierta y no debe habilitarse su botón por la disponibilidad de `summary/enrich`.
+- Se reutilizan `validQuestionContext`, `validateQuestionOutput`, `questionHash` y `applyDocumentary` del flujo fusionado. El adapter proyecta solo las referencias originales seleccionadas (máximo ocho); descripciones, comentarios, criterios y texto/nombres de adjuntos no seleccionados quedan excluidos. La selección vacía conserva el default explícitamente registrado de hasta ocho referencias.
+- La respuesta guardada e instrucciones humanas acotadas son contexto no confiable, nunca evidencia independiente. El resultado incluye `questionId`, `questionHash`, `derivatives.question.currentAnswer` y hashes; cambios de fuente/pregunta/respuesta invalidan su aplicación.
+- La alternativa se persiste como `alternative-not-applied`. Comparar/incorporar para editar no guarda ni aprueba. Roles, responder confirmado, reviewer independiente y aprobación exacta siguen bajo control humano del servidor existente.
+- `contextKey` separa propósito, pregunta, selección, hash de pregunta y baseline de respuesta. Para **todas** las preguntas, el mediador impone historial vacío aun si su almacén contuviera un historial anterior; no carga ni guarda pares de chat de preguntas. El adapter exige `historyMessages: 0`. El diario idempotente es independiente de la clave de sesión: cambiar selección con el mismo executionId produce conflicto, no otra inferencia.
+- El callback emite `context-prepared → waiting-model → validating` en esos límites reales. Reserva/persistencia/completado siguen siendo del servidor; no se inventan porcentajes o eventos del modelo.
+- La UI muestra el nombre del motor seleccionado y, tras ejecutar, tool-call IDs y fuentes/proyecto/ref/hash de las herramientas observadas, sin reasoning. El modo de prueba se rotula «modelo sintético de prueba, sin proveedor».
+- `test-support/native-question-fixture.js` conecta el backend y navegador a un mediador Unix y `AIAgent` **reales** con inferencia determinista explícita. No falsifica atestaciones: usa el marcador de inyección `transport.synthetic` existente en pruebas, registra `synthetic-test-transport` y mantiene el transporte de producción/selector de arranque rechazando ese modo. No existe flag HTTP/env de producto para activar fixtures.
 
-Integración siguiente, pendiente:
-
-1. Fusionar ambas ramas en una tercera rama de integración, resolviendo el cherry-pick de identidad sin duplicar la corrección. No mover ni desplegar estos worktrees.
-2. Adaptar el propósito `question` de `onboarding.questions.bounded.v1`: máximo ocho `sourceRefs`, proyección que excluya campos/adjuntos no seleccionados, instrucciones humanas acotadas y respuesta actual guardada. Reutilizar `validQuestionContext`/`validateQuestionOutput` y `questionHash` del nuevo contrato, no inventar otro.
-3. El resultado debe incluir `questionId`, `questionHash` y `derivatives.question` con su hash exacto, y pasar por `applyDocumentary` como `alternative-not-applied`; nunca sobrescribir ni aprobar texto humano.
-4. Revisar el aislamiento de historial para proyecciones por pregunta: usar una clave adicional de pregunta/selección o historial vacío. **No** reutilizar la sesión documental completa cuando el usuario seleccionó solo unas fuentes; podría reintroducir contenido excluido en turnos anteriores.
-5. Probar progreso, obsolescencia, HTTP/Chromium, RBAC/responder, comparación/incorporación humana y trazabilidad de herramientas con fixtures antes de un único probe sintético real autorizado.
+El bootstrap de `server.js` conserva el motor controlado actual salvo autorización nativa explícita, bindings privados no vacíos y readiness real de **los tres** propósitos. La selección ocurre al arrancar; nunca hay replay/fallback a otro proveedor después de una ejecución nativa admitida. Ver [publicación segura y bloqueos operativos](native-agent-publication.md).
 
 ## Preparación mínima segura (receta, no ejecutada en producción)
 
 Requisitos comprobados en este host: `bwrap`; runtime Hermes Git con el commit fijado; venv Hermes y su Python uv. Supervisor y broker usan stdlib. No se instala nada ni se cambia configuración de Hermes.
 
-1. Revisar esta rama y los límites anteriores. Elegir directorio/socket **nuevo**, privado y distinto del broker vivo. No necesita puerto TCP ni gateway. El código se niega a reemplazar un socket existente.
+1. Revisar esta rama y los límites anteriores. Elegir directorio/socket **nuevo**, privado y distinto del broker vivo. No necesita puerto TCP ni gateway. El supervisor obtiene lock exclusivo de estado: no reemplaza sockets vivos ni archivos/symlinks; solo elimina un socket huérfano cuando la conexión es rechazada y conserva el lock.
 2. Proveer manifiesto y clave propios mode `0600`, directorio mode `0700`, fuera de Git y del directorio estático. Mantener la credencial de proveedor solo en el supervisor de confianza; no montar el HOME Hermes en el contenedor/app V3.
 3. Ejecutar primero `python3 scripts/v3-hermes-agent-probe.py --audit` y comprobar todos los booleanos y `agentLoopDenialsVerified`.
 4. Para revisión local **solo con manifiesto sintético**, el comando de servicio es:
@@ -119,12 +119,12 @@ python3 scripts/v3-hermes-agent-broker.py \
 
 Sin `--real` la inferencia es fixture explícito y `HermesAgentEngine.available()` no lo considera proveedor real. Solo tras autorización del operador, `--real` permite inferencia fija de proveedor: no cambia modelos/perfiles/gateway. No se lanzó ese servicio real en esta entrega. El probe real independiente estuvo limitado al fixture incluido en el script.
 
-5. Integrar el adapter por inyección sin tocar la UI de preguntas hasta revisión coordinada; verificar sus etiquetas y limitaciones antes de habilitarlo. No hay auto fallback ni cambios al broker anterior.
+5. El bootstrap nativo opt-in ya está incorporado. Autorizarlo solo después de revisar corpus, bindings y readiness real, como detalla la receta de publicación. Sin readiness conserva el LLM actual; tras admitir una ejecución nunca la reintenta mediante otro motor.
 6. Aprobar después el usuario de servicio, aislamiento de filesystem de la app, retención, corpus y credenciales. No se crea systemd, reverse proxy, exposición pública, OAuth, despliegue ni infraestructura desde esta rama.
 
 ## Sesiones, jobs y límites
 
-El mediador tiene SQLite privado. La clave de sesión depende de actor, org, proyecto, expediente, fuente y conjunto exacto de fragmentos/refs/hashes. No usa `state.db` de Hermes ni sesiones/memorias default. Conserva como máximo cuatro pares usuario/respuesta final y 48 KB; no guarda razonamiento, mensajes internos o transcript nativo. TTL de sesión 24 h, limpieza al admitir otra ejecución; máximo 200 sesiones. El diario tiene máximo 2000 jobs y falla cerrado al llenarse: requiere mantenimiento deliberado del operador, no reciclado silencioso de IDs.
+El mediador tiene SQLite privado. La clave de sesión depende de actor, org, proyecto, expediente, fuente, propósito, selección/baseline y conjunto exacto de fragmentos/refs/hashes. No usa `state.db` de Hermes ni sesiones/memorias default. Para resumen/enriquecimiento conserva como máximo cuatro pares usuario/respuesta final y 48 KB; para preguntas fuerza historial vacío y sesiones separadas de las documentales. No guarda razonamiento, mensajes internos o transcript nativo. TTL de sesión 24 h, limpieza al admitir otra ejecución; máximo 200 sesiones. El diario tiene máximo 2000 jobs y falla cerrado al llenarse: requiere mantenimiento deliberado del operador, no reciclado silencioso de IDs.
 
 Reserva `running` antes de inferencia; replay idéntico devuelve el resultado; payload distinto con mismo ID da conflicto. Reinicio transforma reservas inciertas en `interrupted-no-retry`. Fallos no se reintentan automáticamente. No se afirma exactly-once frente a fallo de hardware o transacciones entre app y mediador.
 
@@ -132,7 +132,7 @@ Máximo dos solicitudes de proveedor por turno (selección de herramienta + resp
 
 ## Matriz de pruebas y verificación
 
-Resultado final: **33 pruebas V3 Node en serie y 3 pruebas Python del bridge pasan**, además de checks de sintaxis, audit y native-loop fixture. Una repetición paralela de `npm run test:v3` tuvo una falla transitoria en el test preexistente `v3-documentary-http.test.js` (revisión 2 en vez de 3); ese archivo, `documentary-ai.js` y `server.js` no tienen cambios respecto a la base. El test aislado y luego la suite completa serial pasaron. La causa exacta del fallo paralelo no está confirmada; no se oculta ni se altera el test para hacer pasar la entrega. Para regresión reproducible usar `node --test --test-concurrency=1 test/v3*.test.js`.
+La evidencia del incremento unido se recoge en `native-agent-integration-qa.md` y sus logs externos. El incremento anterior registró 33 pruebas V3 y 3 Python, incluyendo una falla paralela transitoria del test documental preexistente que pasó aislado/serial. Esos totales históricos no se presentan como resultados del merge actual. Para esta entrega se ejecutan pruebas completas **en serie** y nuevamente desde un archivo Git limpio del candidato; no se alteran tests para ocultar fallos.
 
 | Capa | Ejecutado | Qué demuestra / límite |
 |---|---|---|
@@ -141,8 +141,8 @@ Resultado final: **33 pruebas V3 Node en serie y 3 pruebas Python del bridge pas
 | Persistencia | Mismo test Python | Replay durable/reinicio, conflicto, reserva incierta sin retry, scope actor/org/proyecto/case/sourceHash, historial sin reasoning. |
 | Unix real + modelo fixture | `test/v3-agent-bridge.test.js` | Servicio Python real y native loop real por socket privado; herramienta realmente ejecutada; salud fixture no se anuncia como real; auth y scope negados. No llamadas pagadas. |
 | Adapter documental | Mismo test Node, envelope inyectado y etiquetado como fixture de protocolo | Bindings, schema, fuentes, aplicación como propuesta pendiente, rechazo de respuestas/citas/evidencia incorrectas. No equivale a un E2E documental con proveedor real. |
-| Compatibilidad progreso | Mismo test Node | Callback de las tres fases conocidas; `question` explícitamente indisponible. |
-| Regresión V3 | `npm run test:v3`, `npm run check:v3` | Suite completa del worktree base más tests bridge; incluye navegador y backend sintéticos existentes. La UI de preguntas nueva no está fusionada ni se le atribuyen sus resultados. |
+| Compatibilidad progreso y preguntas | `v3-agent-question*.test.js`, `v3-agent-startup.test.js`, `v3-agent-readiness.test.js` | Tres propósitos, proyección/baseline/hash, alternativa no aplicada, milestones HTTP, herramienta nativa y navegador desktop/mobile. |
+| Regresión V3 y legacy | Suites Node/Python completas en serie | Rama de preguntas fusionada más bridge; preservación de identidad, progreso y contratos summary/enrich. Sin inferencia operativa ni nuevas llamadas pagadas. |
 
 Reproducir sin inferencia pagada:
 

@@ -114,6 +114,26 @@ def completion(text='',calls=None,response_id='fixture-completion',created=0):
     if calls: message['tool_calls']=calls
     return {'id':response_id,'object':'chat.completion','created':created,'model':MODEL,'choices':[{'index':0,'message':message,'finish_reason':'tool_calls' if calls else 'stop'}]}
 
+def fixture_answer(payload):
+    """Explicit deterministic model, synthetic mode only; never used by provider()."""
+    try:
+        context=json.loads(payload['prompt'])
+    except (ValueError,TypeError):
+        context={}
+    sources=payload.get('sources',[SOURCE])
+    if context.get('purpose') in ('question','summary','enrich') and context.get('sourceRefs'):
+        refs=list(context['sourceRefs'])
+        cited={'text':'Propuesta sintética pendiente de revisión humana','sourceRefs':refs[:1]}
+        if context['purpose']=='question':
+            documentary={'answer':'Alternativa sintética, nunca reemplaza la respuesta humana.','sourceRefs':refs[:8],'assumptions':['Requiere confirmación humana'],'limitations':['Cobertura limitada a fuentes seleccionadas e indexadas autorizadas'],'evidence':'insufficient'}
+        elif context['purpose']=='summary':
+            documentary={'businessNeed':cited,'scope':[cited],'criteria':[cited],'ambiguities':[cited],'questions':[cited],'attachments':[],'instruction':'Revisar la propuesta sintética; no aprobar automáticamente.'}
+        else:
+            documentary={'context':'Propuesta sintética documental.','constraints':'Solo fragmentos autorizados; revisión humana pendiente.','questions':[cited],'criteria':[cited],'limitations':[cited]}
+        return {'documentary':documentary,'contextCitations':[s['id'] for s in sources]}
+    source=sources[0]
+    return {'answer':'Human review is required. Coverage limited to authorized excerpts.','citations':[{'id':source['id'],'project':source['project'],'ref':source['ref']}]}
+
 def run(audit=False,real=False,payload=None,fixture_reply=None,attack=False):
     scratch=Path(os.environ.get('TMPDIR','/root/.hermes/cache/scratch'));scratch.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='v3-native-hermes-',dir=scratch) as directory:
@@ -153,7 +173,7 @@ def run(audit=False,real=False,payload=None,fixture_reply=None,attack=False):
                     elif calls==1:
                         answer=completion(calls=[{'id':'call-fixture-context','type':'function','function':{'name':'terminal' if attack else 'authorized_context','arguments':'{}'}}])
                     else:
-                        answer=completion(json.dumps(fixture_reply or {'answer':'Human review is required. Coverage limited to authorized excerpts.','citations':[{'id':SOURCE['id'],'project':'alpha','ref':'fixture-v1'}]}))
+                        answer=completion(json.dumps(fixture_reply or fixture_answer(payload or {'sources':[SOURCE],'prompt':PROMPT})))
                     p.stdin.write(json.dumps(answer)+'\n');p.stdin.flush()
             finally:
                 if p.poll() is None: p.kill();p.wait()

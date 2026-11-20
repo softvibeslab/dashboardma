@@ -1,6 +1,8 @@
 import {hash,change} from '../onboarding-v2/model.js';
 import {assertGeneration,failure,applyEnrichment} from '../onboarding-v2/hermes-enrichment.js';
 import {sensitive,instructions,refsFor,validateDocumentaryOutput} from '../onboarding-v2/documentary-contract.js';
+import {QUESTION_SCHEMA,questionInstructions,validateQuestionOutput,validQuestionContext} from '../onboarding-v2/question-contract.js';
+import {questionHash} from './questions.js';
 export const projectSnapshot=snapshot=>({items:[snapshot.root,...(snapshot.children||[]).filter(c=>c.fields)].map(item=>({id:item.id,revision:item.rev,title:String(item.fields?.['System.Title']||''),description:String(item.fields?.['System.Description']||''),acceptanceCriteria:String(item.fields?.['Microsoft.VSTS.Common.AcceptanceCriteria']||''),comments:(item.comments?.items||[]).map(c=>({id:c.id,version:c.version,text:String(c.text||'')})),attachments:(item.attachments||[]).map(a=>({name:String(a.name||''),status:a.status,...(a.status==='extracted'?{text:String(a.text||'')}:{})}))}))});
 export const sourceRefs=snapshot=>refsFor(projectSnapshot(snapshot));
 export const currentSeed=state=>{const source=state.azureIntakes?.at(-1);return state.seedVersions?.findLast(s=>s.sourceHash===source?.sourceHash)||{text:'',version:0,hash:hash(''),sourceHash:source?.sourceHash};};
@@ -23,22 +25,39 @@ export function derivatives(state,includeSummary=false){
 export class DocumentaryAI{
  constructor({transport,model='',timeoutMs=45000}={}){this.transport=transport;this.model=model;this.timeoutMs=Math.min(45000,Math.max(1,timeoutMs));this.active=false;}
  configured(){return typeof this.transport==='function'&&Boolean(this.model);}
- async available(){return this.configured()&&(this.transport.health?await this.transport.health('onboarding.documentary.bounded.v2'):true);}
+ async available(purpose='enrich'){return this.configured()&&(this.transport.health?await this.transport.health(purpose==='question'?QUESTION_SCHEMA:'onboarding.documentary.bounded.v2'):true);}
  preview(state,{purpose='enrich',includeSummary=false}={}){if(!['summary','enrich'].includes(purpose))throw failure(400,'purpose');const source=state.azureIntakes?.at(-1);if(!source)throw failure(409,'source-integrity');const snapshot=projectSnapshot(source.snapshot);return {schema:'onboarding.documentary.bounded.v2',purpose,sourceHash:source.sourceHash,azureRevision:source.snapshot.root.rev,snapshot,sourceRefs:refsFor(snapshot),derivatives:derivatives(state,purpose==='enrich'&&includeSummary)};}
- async generate(state,actor,input){
+ async generate(state,actor,input,progress=async()=>{}){
  assertGeneration(state,actor,input);if(!this.configured())throw failure(503,'not-configured');if(this.active)throw failure(429,'busy');
- const {azureRevision,...preview}=this.preview(state,input);const request={...preview,executionId:input.executionId,model:this.model,policy:{tools:'none',maxInputBytes:48000,maxInputTokens:48000,maxOutputTokens:2000,maxOutputBytes:32000,timeoutMs:this.timeoutMs,retry:false,instructions:instructions(input.purpose)}};
+ const {azureRevision,...preview}=this.preview(state,input.purpose==='question'?{purpose:'enrich'}:input);
+ if(input.purpose==='question'){
+  const q=state.phases[1].questions.find(q=>q.id===input.id);if(!q)throw failure(404,'question');
+  const question={id:q.id,text:q.question,currentAnswer:q.answer||'',instructions:input.instructions||'',sourceRefs:input.sourceRefs?.length?input.sourceRefs:Object.keys(preview.sourceRefs).slice(0,8)};
+  if(!validQuestionContext(question,preview.sourceRefs))throw failure(400,'question-context');
+  const selected=new Set(question.sourceRefs);
+  preview.snapshot.items=preview.snapshot.items.map(item=>{const prefix=`AZ-${item.id}-r${item.revision}`;return {...item,...Object.fromEntries(['title','description','acceptanceCriteria'].map(k=>[k,selected.has(prefix+':'+k)?item[k]:''])),comments:item.comments.filter(c=>selected.has(`${prefix}:comment-${c.id}-v${c.version}`)),attachments:item.attachments.map((a,i)=>selected.has(`${prefix}:attachment-${i}`)?a:{name:'',status:'not-selected'})};}).filter(item=>question.sourceRefs.some(r=>r.startsWith(`AZ-${item.id}-r${item.revision}:`)));
+  preview.sourceRefs=refsFor(preview.snapshot);
+  preview.schema=QUESTION_SCHEMA;preview.purpose='question';preview.derivatives.question=question;
+ }
+ const request={...preview,executionId:input.executionId,model:this.model,policy:{tools:'none',maxInputBytes:48000,maxInputTokens:48000,maxOutputTokens:2000,maxOutputBytes:32000,timeoutMs:this.timeoutMs,retry:false,instructions:input.purpose==='question'?questionInstructions:instructions(input.purpose)}};
  if(sensitive(request))throw failure(400,'sensitive-input');const inputHash=hash(request),payload={...request,inputHash};if(Buffer.byteLength(JSON.stringify(payload))>48000)throw failure(413,'input-limit');
- this.active=true;let timer;const controller=new AbortController();try{
+ await progress('context-prepared');this.active=true;let timer;const controller=new AbortController();try{
+ await progress('waiting-model');
  const raw=await Promise.race([this.transport(payload,controller.signal),new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(failure(504,'timeout'));},this.timeoutMs);})]);
- const output=validateDocumentaryOutput(raw,input.purpose,request.sourceRefs);
- return {revision:state.revision,executionId:input.executionId,purpose:input.purpose,actor:actor.id,model:this.model,at:new Date().toISOString(),sourceHash:request.sourceHash,azureRevision,inputHash,outputHash:hash(output),derivativesHash:hash(request.derivatives),derivatives:request.derivatives,sourceRefs:request.sourceRefs,status:'real',runtime:'stateless-llm-inference-v1',output};
+ await progress('validating');const output=input.purpose==='question'?validateQuestionOutput(raw,request.sourceRefs):validateDocumentaryOutput(raw,input.purpose,request.sourceRefs);
+ return {revision:state.revision,executionId:input.executionId,purpose:input.purpose,...(input.purpose==='question'?{questionId:input.id,questionHash:questionHash(state,state.phases[1].questions.find(q=>q.id===input.id))}:{}),actor:actor.id,model:this.model,at:new Date().toISOString(),sourceHash:request.sourceHash,azureRevision,inputHash,outputHash:hash(output),derivativesHash:hash(request.derivatives),derivatives:request.derivatives,sourceRefs:request.sourceRefs,status:'real',runtime:this.transport.synthetic?'synthetic-test-transport':'stateless-llm-inference-v1',output};
  }catch(e){if(e.code)throw e;throw failure(502,'broker-failed');}finally{clearTimeout(timer);this.active=false;}
  }
 }
 export function applyDocumentary(state,result,actor){
  const source=assertGeneration(state,actor,result);if(result.actor!==actor.id||source.sourceHash!==result.sourceHash||result.status!=='real'||hash(result.output)!==result.outputHash)throw failure(409,'output-integrity');
- if(hash(derivatives(state,Boolean(result.derivatives.reviewedSummary)))!==result.derivativesHash)throw failure(409,'stale-derivatives');
+ const derived=derivatives(state,Boolean(result.derivatives.reviewedSummary));if(result.purpose==='question')derived.question=result.derivatives.question;
+ if(hash(derived)!==result.derivativesHash)throw failure(409,'stale-derivatives');
+ if(result.purpose==='question'){
+  const q=state.phases[1].questions.find(q=>q.id===result.questionId);if(!q||questionHash(state,q)!==result.questionHash||q.answer!==result.derivatives.question.currentAnswer)throw failure(409,'stale-question');
+  validateQuestionOutput(result.output,result.sourceRefs);
+  const next=structuredClone(state);next.questionRecords||={};const r=next.questionRecords[q.id]||={versions:[],decisions:[],suggestions:[]};r.suggestions.push({...structuredClone(result),status:'alternative-not-applied'});return next;
+ }
  validateDocumentaryOutput(result.output,result.purpose,sourceRefs(source.snapshot));
  if(result.purpose==='summary'){const next=changed(state,actor,'ai.summary.generate');next.aiSummaries||=[];next.aiSummaries.push({...result,version:next.revision,status:'generated-pending-review'});return next;}
  const compatible={...result,output:{context:result.output.context+'\n\nCriterios propuestos (no Azure):\n'+result.output.criteria.map(x=>x.text+' ['+x.sourceRefs.join(', ')+']').join('\n'),constraints:result.output.constraints+'\nLimitaciones:\n'+result.output.limitations.map(x=>x.text+' ['+x.sourceRefs.join(', ')+']').join('\n'),questions:result.output.questions.map(x=>x.text+' ['+x.sourceRefs.join(', ')+']')}};compatible.outputHash=hash(compatible.output);

@@ -6,7 +6,7 @@ import path from 'node:path';
 import {createV3Server} from '../src/onboarding-v3/server.js';
 import {initial} from '../src/onboarding-v2/model.js';
 test('V3 continuity actual-backend Chromium: questions -> exact review -> manual-preserving SPEC -> honest CP3 desktop/mobile',{timeout:60000},async()=>{
- const dir=await mkdtemp(path.join(process.env.TMPDIR,'v3-continuity-browser-')),dataFile=path.join(dir,'state.json'),s=initial();
+ const dir=await mkdtemp(path.join(process.env.TMPDIR,'v3-continuity-browser-')),dataFile=path.join(dir,'state.json');let s=initial();
  s.revision=1;s.phases[1]={title:'Synthetic continuity story',owner:'owner',context:'Synthetic workflow scope',constraints:'No automatic development',sources:[],questions:[{id:'Q1',question:'What environment is required?',owner:'owner',blocking:true,answer:'QA fixture',rationale:'Synthetic workshop decision'}]};s.phases[4].reviewer='reviewer';s.phases[3]={sections:[{id:'MANUAL',front:'shared',title:'Existing manual spec',body:'Preserved synthetic manual text'}],criteria:[]};
  await writeFile(dataFile,JSON.stringify(s));const users=[{id:'owner',roles:['coordinator','editor'],token:'synthetic-flow-owner-token'},{id:'reviewer',roles:['reviewer'],token:'synthetic-flow-reviewer-token'}];
  const server=createV3Server({authMode:'local-review',users,dataFile,staffingRequired:false});await new Promise(r=>server.listen(0,'127.0.0.1',r));const base=`http://127.0.0.1:${server.address().port}/dashboard/onboarding-v3`;
@@ -27,7 +27,10 @@ test('V3 continuity actual-backend Chromium: questions -> exact review -> manual
  assert.equal(await ev('document.getElementById("contextReview").disabled'),true,'Coordinator must not approve');
  assert.equal(await ev('document.getElementById("prepareSpec").disabled'),true,'Exact review missing');
  await ev(`document.querySelector('[data-flow-questions]').click()`);assert.equal(await ev(`document.activeElement.hasAttribute('data-answer')`),true);
- await ev(`fetch('${base}/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'synthetic-flow-reviewer-token'})})`);await cdp('Page.reload',{},sessionId);await wait('document.getElementById("contextReview")&&!document.getElementById("contextReview").disabled');
+ await ev(`document.querySelector('[data-responder]').value='owner';document.querySelector('[data-reviewer]').value='reviewer';document.querySelector('[data-q-action="assign"]').click()`);await wait('document.querySelector("[data-question]").textContent.includes("confirmed")');
+ await ev(`document.querySelector('[data-q-action="ready-review"]').click()`);await wait('document.querySelector("[data-question]").textContent.includes("Lista para revisión")');
+ await ev(`fetch('${base}/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'synthetic-flow-reviewer-token'})})`);await cdp('Page.reload',{},sessionId);await wait('!!document.querySelector("[data-q-action=approve]")');
+ await ev(`document.querySelector('[data-q-action="approve"]').click()`);await wait('document.getElementById("contextReview")&&!document.getElementById("contextReview").disabled');
  await ev('window.confirm=()=>true;document.getElementById("contextReview").click()');await wait('document.getElementById("continuity").textContent.includes("Revisado")');
  await ev(`fetch('${base}/api/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({token:'synthetic-flow-owner-token'})})`);await cdp('Page.reload',{},sessionId);await wait('document.getElementById("prepareSpec")&&!document.getElementById("prepareSpec").disabled');
  await ev('window.confirm=()=>true;document.getElementById("prepareSpec").click()');await wait('document.getElementById("continuity").textContent.includes("Generado")');
@@ -40,9 +43,9 @@ test('V3 continuity actual-backend Chromium: questions -> exact review -> manual
  await cdp('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true},sessionId);await ev('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');
  assert.equal(await ev('innerWidth'),390);assert.equal(await ev('document.documentElement.scrollWidth<=innerWidth'),true);
  await ev('document.getElementById("continuity").scrollIntoView({behavior:"instant",block:"start"})');await cdp('Page.captureScreenshot',{format:'png'},sessionId).then(r=>writeFile(path.join(dir,'mobile.png'),Buffer.from(r.data,'base64')));
- await ev(`fetch('${base}/api/action',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'save',phase:1,revision:3,data:{...${JSON.stringify(s.phases[1])},context:'Changed fixture scope'}})})`);
+ await ev(`fetch('${base}/api/action',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'save',phase:1,revision:6,data:{...${JSON.stringify(s.phases[1])},context:'Changed fixture scope'}})})`);
  await cdp('Page.reload',{},sessionId);await wait('document.getElementById("continuity")?.textContent.includes("Pendiente")');
- const stored=JSON.parse(await readFile(dataFile,'utf8'));assert.equal(stored.revision,4);assert.equal(stored.history[0].phases[3].sections[0].body,'Preserved synthetic manual text');assert.equal(stored.contextReviews.length,1);assert.equal(stored.decisions.length,0);assert.equal(stored.specDrafts.length,1);assert.deepEqual(errors,[]);
+ const stored=JSON.parse(await readFile(dataFile,'utf8'));assert.equal(stored.revision,7);assert.equal(stored.history[0].phases[3].sections[0].body,'Preserved synthetic manual text');assert.equal(stored.contextReviews.length,1);assert.equal(stored.decisions.length,0);assert.equal(stored.specDrafts.length,1);assert.ok(stored.specDrafts[0].questionRecords.Q1.decisions.length);assert.deepEqual(errors,[]);
  console.log('Continuity synthetic screenshots:',dir);
  }finally{browser.kill('SIGTERM');await new Promise(r=>{if(browser.exitCode!==null)return r();browser.once('exit',r);});await new Promise(r=>server.close(r));await rm(path.join(dir,'profile'),{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 });

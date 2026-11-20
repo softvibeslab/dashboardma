@@ -14,6 +14,10 @@ import socketserver
 import sqlite3
 import threading
 import time
+import fcntl
+import signal
+import socket
+import stat
 
 spec=importlib.util.spec_from_file_location('native_probe',Path(__file__).with_name('v3-hermes-agent-probe.py'))
 assert spec is not None and spec.loader is not None
@@ -23,7 +27,7 @@ def digest(value):
     return hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
 
 def scope_valid(value):
-    return isinstance(value,dict) and set(value)=={'actor','org','project','caseId'} and all(isinstance(x,str) and re.fullmatch(r'[a-zA-Z0-9_.-]{1,100}',x) for x in value.values())
+    return isinstance(value,dict) and set(value)=={'actor','org','project','caseId'} and all(isinstance(x,str) and 0<len(x.strip()) and len(x)<=200 and not re.search(r'[\x00-\x1f\x7f]',x) for x in value.values())
 
 class Broker:
     def __init__(self,directory,manifest,real=False):
@@ -54,12 +58,14 @@ class Broker:
         if len(json.dumps(sources).encode())>24000: raise ValueError('context-limit')
         return sources
     def execute(self,request):
-        if not isinstance(request,dict) or set(request)!={'executionId','scope','prompt','inputHash','sourceHash'}: raise ValueError('input-schema')
+        if not isinstance(request,dict) or set(request)!={'executionId','scope','prompt','inputHash','sourceHash','purpose','contextKey','historyPolicy'}: raise ValueError('input-schema')
         sources=self.authorize(request['scope'],request['sourceHash'])
         if not isinstance(request['prompt'],str) or not request['prompt'] or len(request['prompt'].encode())>24000 or not re.fullmatch(r'[a-zA-Z0-9_-]{16,80}',request['executionId']) or not all(isinstance(request[k],str) and re.fullmatch('[a-f0-9]{64}',request[k]) for k in ('inputHash','sourceHash')): raise ValueError('input-invalid')
+        if request['purpose'] not in ('summary','enrich','question') or request['historyPolicy']!=('none' if request['purpose']=='question' else 'scoped') or not isinstance(request['contextKey'],str) or not re.fullmatch(r'[a-f0-9]{64}',request['contextKey']): raise ValueError('input-invalid')
         if not self.lock.acquire(blocking=False): raise ValueError('broker-busy')
         try:
             key=digest([request['scope'],sources,request['sourceHash']]);fingerprint=digest(request)
+            session_key=digest([key,request['purpose'],request['contextKey'],request['historyPolicy']])
             row=self.db.execute('SELECT hash,status,result FROM jobs WHERE scope=? AND id=?',(key,request['executionId'])).fetchone()
             if row:
                 if row[0]!=fingerprint: raise ValueError('replay-conflict')
@@ -68,17 +74,19 @@ class Broker:
             # TTL/session cap, bounded durable job journal; never silently discard uncertain jobs.
             self.db.execute('DELETE FROM sessions WHERE at<?',(time.time()-86400,))
             if self.session_count()>=200 or self.db.execute('SELECT count(*) FROM jobs').fetchone()[0]>=2000: raise ValueError('capacity')
-            history_row=self.db.execute('SELECT history FROM sessions WHERE scope=?',(key,)).fetchone()
-            history=json.loads(history_row[0]) if history_row else []
+            history_row=self.db.execute('SELECT history FROM sessions WHERE scope=?',(session_key,)).fetchone()
+            history=json.loads(history_row[0]) if history_row and request['historyPolicy']=='scoped' else []
             self.db.execute('INSERT INTO jobs VALUES (?,?,?,?,?,?)',(key,request['executionId'],fingerprint,'running',None,time.time()));self.db.commit()
             try:
                 result=native.run(real=self.real,payload={'sources':sources,'prompt':request['prompt'],'history':history})
                 result.update({k:request[k] for k in ('executionId','inputHash','sourceHash')})
-                result['sessionId']=key
+                result['sessionId']=session_key
+                result.update({k:request[k] for k in ('purpose','contextKey','historyPolicy')})
                 # Store only user/final text, never native raw trajectories or reasoning.
                 history=(history+[{'role':'user','content':request['prompt']},{'role':'assistant','content':result['answer']}])[-8:]
                 if len(json.dumps(history).encode())>48000: history=history[-2:]
-                self.db.execute('INSERT OR REPLACE INTO sessions VALUES (?,?,?)',(key,json.dumps(history),time.time()))
+                if request['historyPolicy']=='none': history=[]
+                self.db.execute('INSERT OR REPLACE INTO sessions VALUES (?,?,?)',(session_key,json.dumps(history),time.time()))
                 self.db.execute("UPDATE jobs SET status='complete',result=? WHERE scope=? AND id=?",(json.dumps(result),key,request['executionId']));self.db.commit()
                 return result
             except Exception:
@@ -90,7 +98,7 @@ class UnixServer(socketserver.ThreadingMixIn,socketserver.UnixStreamServer):
     daemon_threads=True
     allow_reuse_address=False
 
-def serve(directory,manifest,key_file,real=False):
+def _serve_locked(directory,manifest,key_file,real=False,socket_directory=None):
     directory=Path(directory)
     for file in (Path(manifest),Path(key_file)):
         if file.is_symlink() or file.stat().st_mode&0o077: raise ValueError('operator-file-permissions')
@@ -112,7 +120,7 @@ def serve(directory,manifest,key_file,real=False):
                 request=json.loads(self.rfile.read(length))
                 if self.path=='/health':
                     if request!={}: raise ValueError('input-schema')
-                    return self.reply(200,{'ready':not real or native.credential_ready(),'runtime':'hermes-native-sealed-v1','allowedTools':['authorized_context'],'model':native.MODEL,'modelMode':'real-provider' if real else 'deterministic-fixture','isolation':audit['isolation'],'hermesCommit':native.HERMES_COMMIT})
+                    return self.reply(200,{'ready':any(s['org']==g['org'] and s['project']==g['project'] for s in broker.manifest['sources'] for g in broker.manifest['grants']) and (not real or native.credential_ready()),'runtime':'hermes-native-sealed-v1','allowedTools':['authorized_context'],'model':native.MODEL,'modelMode':'real-provider' if real else 'deterministic-fixture','isolation':audit['isolation'],'hermesCommit':native.HERMES_COMMIT,'schemas':['onboarding.documentary.bounded.v2','onboarding.questions.bounded.v1'],'purposes':['summary','enrich','question'],'contextPolicy':{'questionHistory':'none','maxOriginalRefs':8},'coverage':{'sourceCount':len(broker.manifest['sources']),'bindingCount':len(broker.manifest['grants']),'allProjectsIndexed':False}})
                 result=broker.execute(request);return self.reply(200,result)
             except PermissionError: return self.reply(403,{'error':'scope-denied'})
             except Exception as exc:
@@ -121,16 +129,40 @@ def serve(directory,manifest,key_file,real=False):
                 return self.reply(503,{'error':code if code in safe else 'broker-failed'})
         def reply(self,status,body):
             data=json.dumps(body).encode();self.send_response(status);self.send_header('Content-Type','application/json');self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
-    # Never unlink or replace an existing/live socket.
-    socket_path=directory/'agent.sock'
+    socket_root=Path(socket_directory) if socket_directory else directory
+    shared=socket_root!=directory
+    info=socket_root.lstat()
+    if socket_root.is_symlink() or not socket_root.is_absolute() or not stat.S_ISDIR(info.st_mode) or info.st_uid!=os.getuid() or stat.S_IMODE(info.st_mode)!=(0o710 if shared else 0o700): raise ValueError('socket-directory-permissions')
+    socket_path=socket_root/'agent.sock'
+    # The caller holds an exclusive private state lock. Never replace a live or non-socket target.
+    if socket_path.exists() or socket_path.is_symlink():
+        if not stat.S_ISSOCK(socket_path.lstat().st_mode): raise ValueError('socket-target-invalid')
+        with socket.socket(socket.AF_UNIX) as probe:
+            probe.settimeout(.2)
+            try: probe.connect(str(socket_path))
+            except ConnectionRefusedError: socket_path.unlink()
+            else: raise ValueError('socket-owner-active')
     old_umask=os.umask(0o077)
     try:
         with UnixServer(str(socket_path),Handler) as server:
-            os.chmod(socket_path,0o600)
+            if shared: os.chown(socket_path,-1,info.st_gid)
+            os.chmod(socket_path,0o660 if shared else 0o600)
             try: server.serve_forever()
             finally: socket_path.unlink(missing_ok=True)
     finally: os.umask(old_umask)
 
+def serve(directory,manifest,key_file,real=False,socket_directory=None):
+    directory=Path(directory)
+    directory.mkdir(mode=0o700,parents=True,exist_ok=True)
+    if not directory.is_absolute() or directory.is_symlink() or directory.stat().st_uid!=os.getuid() or stat.S_IMODE(directory.stat().st_mode)!=0o700: raise ValueError('state-permissions')
+    with os.fdopen(os.open(directory/'supervisor.lock',os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW,0o600),'w') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        def stop(signum,frame): raise SystemExit(0)
+        previous=signal.signal(signal.SIGTERM,stop) if threading.current_thread() is threading.main_thread() else None
+        try: _serve_locked(directory,manifest,key_file,real,socket_directory)
+        finally:
+            if previous is not None: signal.signal(signal.SIGTERM,previous)
+
 if __name__=='__main__':
-    parser=argparse.ArgumentParser();parser.add_argument('--directory',required=True);parser.add_argument('--manifest',required=True);parser.add_argument('--key-file',required=True);parser.add_argument('--real',action='store_true');args=parser.parse_args()
-    serve(args.directory,args.manifest,args.key_file,real=args.real)
+    parser=argparse.ArgumentParser();parser.add_argument('--directory',required=True);parser.add_argument('--socket-directory');parser.add_argument('--manifest',required=True);parser.add_argument('--key-file',required=True);parser.add_argument('--real',action='store_true');args=parser.parse_args()
+    serve(args.directory,args.manifest,args.key_file,real=args.real,socket_directory=args.socket_directory)

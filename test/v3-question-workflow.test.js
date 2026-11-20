@@ -1,0 +1,37 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {fixture,actor} from '../test-support/documentary-fixture.js';
+import {questionView,questionChange,syncLegacyResponses} from '../src/onboarding-v3/questions.js';
+const users=[actor,{id:'review-fixture',roles:['reviewer']},{id:'coord-fixture',roles:['coordinator']}];
+const coordinator={...users[2],authenticated:true},reviewer={...users[1],authenticated:true};
+test('legacy answers become versioned drafts, assigned independent reviewer approves exact answer and source; history survives edits',()=>{
+ let s=fixture();const id=s.phases[1].questions[0].id;
+ assert.equal(questionView(s,users)[0].status,'pending');
+ const act=(who,a)=>s=questionChange(s,who,{revision:s.revision,id,...a},users);
+ assert.throws(()=>act(actor,{type:'assign',responder:actor.id,reviewer:reviewer.id}),/forbidden/);
+ act(coordinator,{type:'assign',responder:actor.id,reviewer:reviewer.id,category:'technical',area:'Web',suggestedRole:'Product owner'});
+ act(actor,{type:'answer',text:'Human answer',rationale:'Synthetic source',status:'ready-review'});
+ let q=questionView(s,users)[0];assert.equal(q.status,'ready-review');
+ assert.throws(()=>act(reviewer,{type:'approve',answerHash:'wrong',questionHash:q.questionHash,version:q.version}),/exact-version/);
+ act(reviewer,{type:'approve',answerHash:q.answerHash,questionHash:q.questionHash,version:q.version});
+ q=questionView(s,users)[0];assert.equal(q.status,'approved');assert.equal(q.approval.actor,reviewer.id);
+ act(actor,{type:'answer',text:'Revised answer',rationale:'Synthetic source',status:'draft'});
+ q=questionView(s,users)[0];assert.equal(q.status,'draft');assert.equal(q.decisions.length,1);assert.equal(q.versions.length,2);
+ act(actor,{type:'answer',text:'Revised answer',rationale:'Synthetic source',status:'ready-review'});q=questionView(s,users)[0];
+ assert.throws(()=>act(reviewer,{type:'return',answerHash:q.answerHash,questionHash:q.questionHash,version:q.version,reason:''}),/reason/);
+ act(reviewer,{type:'return',answerHash:q.answerHash,questionHash:q.questionHash,version:q.version,reason:'Clarify evidence'});assert.equal(questionView(s,users)[0].status,'returned');
+});
+test('legacy edit and revert creates new draft versions rather than resurrecting an old approval',()=>{
+ let s=fixture(),id=s.phases[1].questions[0].id;const act=(who,a)=>s=questionChange(s,who,{revision:s.revision,id,...a},users);
+ act(coordinator,{type:'assign',responder:actor.id,reviewer:reviewer.id});act(actor,{type:'answer',text:'Original human',rationale:'source',status:'ready-review'});const q=questionView(s,users)[0];act(reviewer,{type:'approve',answerHash:q.answerHash,questionHash:q.questionHash,version:q.version});
+ const changed=structuredClone(s);changed.phases[1].questions[0].answer='Legacy change';syncLegacyResponses(s,changed,actor);
+ const reverted=structuredClone(changed);reverted.phases[1].questions[0].answer='Original human';syncLegacyResponses(changed,reverted,actor);
+ assert.equal(questionView(reverted,users)[0].status,'draft');assert.equal(questionView(reverted,users)[0].versions.length,3);assert.equal(questionView(reverted,users)[0].decisions.length,1);
+});
+test('no implicit identity/role grants; source edits invalidate approvals without erasing decisions',()=>{
+ let s=fixture(),id=s.phases[1].questions[0].id;const act=(who,a)=>s=questionChange(s,who,{revision:s.revision,id,...a},users);
+ assert.throws(()=>act(coordinator,{type:'assign',responder:'unknown',reviewer:reviewer.id}),/identity/);
+ assert.throws(()=>act(coordinator,{type:'assign',responder:actor.id,reviewer:actor.id}),/reviewer/);
+ act(coordinator,{type:'assign',responder:actor.id,reviewer:reviewer.id});act(actor,{type:'answer',text:'Confirmed human',rationale:'source',status:'ready-review'});let q=questionView(s,users)[0];act(reviewer,{type:'approve',answerHash:q.answerHash,questionHash:q.questionHash,version:q.version});
+ s.phases[1].sources.push({id:'new',text:'changed'});q=questionView(s,users)[0];assert.notEqual(q.status,'approved');assert.equal(q.decisions.length,1);assert.equal(q.approval,null);
+ assert.throws(()=>questionChange(s,actor,{revision:0,id,type:'answer',text:'stale',status:'draft'},users),/stale/);
+});

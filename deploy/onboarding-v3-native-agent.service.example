@@ -1,0 +1,33 @@
+# Candidate recipe only. Never replaces the existing controlled-LLM broker.
+# Verify the host-mapped application GID before installation; 1000 matches the
+# standard node image, not necessarily a userns-remapped deployment.
+[Unit]
+Description=DashboardMA V3 sealed native Hermes mediator
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=root
+Group=1000
+WorkingDirectory=/opt/dashboardma-v3-native/current
+Environment=TMPDIR=/root/.hermes/cache/scratch
+StateDirectory=dashboardma-v3-native-agent
+StateDirectoryMode=0700
+RuntimeDirectory=dashboardma-v3-native-agent
+RuntimeDirectoryMode=0710
+RuntimeDirectoryPreserve=yes
+ExecStart=/usr/bin/python3 /opt/dashboardma-v3-native/current/scripts/v3-hermes-agent-broker.py --directory /var/lib/dashboardma-v3-native-agent --socket-directory /run/dashboardma-v3-native-agent --manifest /etc/dashboardma-v3-native/manifest.json --key-file /etc/dashboardma-v3-native/mediator.key --real
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+KillMode=control-group
+UMask=0077
+# The worker's bwrap isolation and tool capability guard are mandatory regardless
+# of systemd hardening. Add compatible host hardening only after an isolated audit;
+# do not set RestrictNamespaces/PrivateUsers flags that prevent bwrap startup.
+
+[Install]
+WantedBy=multi-user.target

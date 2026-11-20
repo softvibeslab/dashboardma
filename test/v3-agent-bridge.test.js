@@ -14,6 +14,8 @@ test('scope resolver binds actor and persisted exact snapshot, not browser input
  const resolve=scopeResolverFromBindings([{...scope,sourceHash:'a'.repeat(64)}]);
  assert.deepEqual(resolve({actor:{id:scope.actor,authenticated:true},state:{azureIntakes:[{sourceHash:'a'.repeat(64)}]}}),scope);
  assert.throws(()=>resolve({actor:{id:scope.actor,authenticated:true},state:{azureIntakes:[{sourceHash:'b'.repeat(64)}]}}),/scope-denied/);
+ const literal={actor:'entra:tenant:opaque-oid',org:'Organización autorizada',project:'Proyecto Android',caseId:'workitem:900001'};
+ const exact=scopeResolverFromBindings([{...literal,sourceHash:'a'.repeat(64)}]);assert.deepEqual(exact({actor:{id:literal.actor,authenticated:true},state:{azureIntakes:[{sourceHash:'a'.repeat(64)}]}}),literal);
 });
 
 test('V3 adapter is fail-closed without an authorized native mediator',async()=>{
@@ -25,7 +27,7 @@ test('V3 adapter is fail-closed without an authorized native mediator',async()=>
  const transport=async()=>{};transport.health=async()=>true;
  const configured=new HermesAgentEngine({transport,scopeResolver:()=>({})});
  assert.equal(await configured.available('summary'),true);
- assert.equal(await configured.available('question'),false,'Unimplemented question purpose must remain disabled after branch merge');
+ assert.equal(await configured.available('question'),true,'Question uses the native sealed tool boundary');
  assert.equal(configured.engine.kind,'hermes-agent');
 });
 
@@ -35,7 +37,7 @@ test('documentary adapter binds native evidence and keeps context refs separate 
  const {applyDocumentary}=await import('../src/onboarding-v3/documentary-ai.js');
  const scope={actor:actor.id,org:'synthetic',project:'alpha',caseId:'case-1'};const state=fixture();let mode='valid',seen;
  // Injected protocol fixture ONLY. No provider request is made by this unit test.
- const transport=async request=>{seen=request;const prompt=JSON.parse(request.prompt);return {runtime:NATIVE_RUNTIME,hermesCommit:HERMES_COMMIT,model:'gpt-6.1-sol',modelMode:mode==='fixture'?'deterministic-fixture':'real-provider',allowedTools:['authorized_context'],isolation:Object.fromEntries(['hostHomeHidden','hostWorkspacesHidden','credentialsHidden','networkDisabled','runtimeReadOnly','capabilitiesDropped'].map(k=>[k,true])),executionId:request.executionId,inputHash:mode==='binding'?'x'.repeat(64):request.inputHash,sourceHash:request.sourceHash,tools:mode==='no-tools'?[]:[{toolCallId:'injected-test-call',name:'authorized_context',status:'executed',sources:[{id:'alpha-guide',org:'synthetic',project:'alpha',kind:'repository',ref:'fixture-v1',contentHash:'c'.repeat(64)}]}],answer:JSON.stringify({documentary:outputFor(prompt),contextCitations:[mode==='bad-citation'?'unseen':'alpha-guide']})};};
+ const transport=async request=>{seen=request;const prompt=JSON.parse(request.prompt);return {runtime:NATIVE_RUNTIME,hermesCommit:HERMES_COMMIT,model:'gpt-6.1-sol',modelMode:mode==='fixture'?'deterministic-fixture':'real-provider',allowedTools:['authorized_context'],isolation:Object.fromEntries(['hostHomeHidden','hostWorkspacesHidden','credentialsHidden','networkDisabled','runtimeReadOnly','capabilitiesDropped'].map(k=>[k,true])),executionId:request.executionId,inputHash:mode==='binding'?'x'.repeat(64):request.inputHash,sourceHash:request.sourceHash,purpose:request.purpose,contextKey:request.contextKey,historyPolicy:request.historyPolicy,tools:mode==='no-tools'?[]:[{toolCallId:'injected-test-call',name:'authorized_context',status:'executed',sources:[{id:'alpha-guide',org:'synthetic',project:'alpha',kind:'repository',ref:'fixture-v1',contentHash:'c'.repeat(64)}]}],answer:JSON.stringify({documentary:outputFor(prompt),contextCitations:[mode==='bad-citation'?'unseen':'alpha-guide']})};};
  transport.health=async()=>true;const service=new HermesAgentEngine({transport,scopeResolver:()=>scope});
  const input={revision:1,purpose:'summary',executionId:'fixture-native-adapter-0001'};
  const stages=[];const result=await service.generate(state,actor,input,async stage=>stages.push(stage));assert.deepEqual(stages,['context-prepared','waiting-model','validating']);assert.equal(result.runtime,NATIVE_RUNTIME);assert.deepEqual(seen.scope,scope);assert.equal(result.agentEvidence.tools[0].toolCallId,'injected-test-call');
@@ -54,7 +56,7 @@ test('actual Unix mediator runs native tool with synthetic model and refuses to 
   let ready=false;for(let i=0;i<120;i++){try{await stat(directory+'/agent.sock');ready=true;break;}catch{await new Promise(r=>setTimeout(r,100));}}
   assert.ok(ready,diagnostic);
   const transport=nativeAgentTransport({socketPath:directory+'/agent.sock',key,authorized:true});assert.equal(await transport.health(),false,'Synthetic model must not be advertised as real provider');
-  const request={executionId:'fixture-http-execution-0001',scope,prompt:'Synthetic only: what is required before release?',inputHash:'a'.repeat(64),sourceHash:'b'.repeat(64)};
+  const request={executionId:'fixture-http-execution-0001',scope,prompt:'Synthetic only: what is required before release?',inputHash:'a'.repeat(64),sourceHash:'b'.repeat(64),purpose:'enrich',contextKey:'d'.repeat(64),historyPolicy:'scoped'};
   const result=await transport(request);assert.equal(result.runtime,NATIVE_RUNTIME);assert.equal(result.modelMode,'deterministic-fixture');assert.equal(result.providerRequests,0);assert.equal(result.inferenceRequests,2);assert.equal(result.tools[0].status,'executed');assert.equal(result.tools[0].sources[0].id,'alpha-guide');assert.deepEqual(await transport(request),result,'Durable replay');
   await assert.rejects(transport({...request,scope:{...scope,project:'beta'}}),/unavailable/);
   const wrong=nativeAgentTransport({socketPath:directory+'/agent.sock',key:'x'.repeat(32),authorized:true});assert.equal(await wrong.health(),false);
